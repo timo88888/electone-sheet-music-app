@@ -31,7 +31,12 @@
       "package.json"
     ],
     "win": {
-      "target": "nsis"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -41,7 +46,8 @@
     "publish": {
       "provider": "github",
       "owner": "timo88888",
-      "repo": "electone-sheet-music-app"
+      "repo": "electone-sheet-music-app",
+      "releaseType": "release"
     }
   }
 }
