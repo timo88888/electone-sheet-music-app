@@ -1,0 +1,4117 @@
+{
+  "title": "パッヘルベルのカノン(かんたんアレンジ)",
+  "composer": "パッヘルベル",
+  "lyricist": "",
+  "timeSig": "4/4",
+  "keySignature": "D",
+  "pickupBeats": 0,
+  "clefs": {
+    "upper": "treble",
+    "lower": "treble",
+    "pedal": "bass"
+  },
+  "measures": [
+    {
+      "upper": [
+        {
+          "id": "n3",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n4",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n5",
+          "keys": [
+            "a/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n6",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n2",
+          "keys": [
+            "d/4",
+            "f/4",
+            "a/4"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n1",
+          "keys": [
+            "d/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "Strings",
+      "chord": "D",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n9",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n10",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n11",
+          "keys": [
+            "e/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n12",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n8",
+          "keys": [
+            "a/4",
+            "c/5",
+            "e/5"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n7",
+          "keys": [
+            "a/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "A",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n15",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n16",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n17",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n18",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n14",
+          "keys": [
+            "b/4",
+            "d/5",
+            "f/5"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n13",
+          "keys": [
+            "b/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "Bm",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n21",
+          "keys": [
+            "f/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n22",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n23",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n24",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n20",
+          "keys": [
+            "f/4",
+            "a/4",
+            "c/5"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n19",
+          "keys": [
+            "f/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "F#m",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n27",
+          "keys": [
+            "g/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n28",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n29",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n30",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n26",
+          "keys": [
+            "g/4",
+            "b/4",
+            "d/5"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n25",
+          "keys": [
+            "g/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "G",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n33",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n34",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n35",
+          "keys": [
+            "a/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n36",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n32",
+          "keys": [
+            "d/4",
+            "f/4",
+            "a/4"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n31",
+          "keys": [
+            "d/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "D",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n39",
+          "keys": [
+            "g/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n40",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n41",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n42",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n38",
+          "keys": [
+            "g/4",
+            "b/4",
+            "d/5"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n37",
+          "keys": [
+            "g/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "G",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n45",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n46",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n47",
+          "keys": [
+            "e/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n48",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n44",
+          "keys": [
+            "a/4",
+            "c/5",
+            "e/5"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n43",
+          "keys": [
+            "a/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "A",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n51",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n52",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n53",
+          "keys": [
+            "a/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n54",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n50",
+          "keys": [
+            "d/4",
+            "f/4",
+            "a/4"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n49",
+          "keys": [
+            "d/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "D",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n57",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n58",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n59",
+          "keys": [
+            "e/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n60",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n56",
+          "keys": [
+            "a/4",
+            "c/5",
+            "e/5"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n55",
+          "keys": [
+            "a/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "A",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n63",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n64",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n65",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n66",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n62",
+          "keys": [
+            "b/4",
+            "d/5",
+            "f/5"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n61",
+          "keys": [
+            "b/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "Bm",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n69",
+          "keys": [
+            "f/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n70",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n71",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n72",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n68",
+          "keys": [
+            "f/4",
+            "a/4",
+            "c/5"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n67",
+          "keys": [
+            "f/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "F#m",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n75",
+          "keys": [
+            "g/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n76",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n77",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n78",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n74",
+          "keys": [
+            "g/4",
+            "b/4",
+            "d/5"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n73",
+          "keys": [
+            "g/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "G",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n81",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n82",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n83",
+          "keys": [
+            "a/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n84",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n80",
+          "keys": [
+            "d/4",
+            "f/4",
+            "a/4"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n79",
+          "keys": [
+            "d/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "D",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n87",
+          "keys": [
+            "g/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": "cresc-start",
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n88",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n89",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n90",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n86",
+          "keys": [
+            "g/4",
+            "b/4",
+            "d/5"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n85",
+          "keys": [
+            "g/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "G",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n93",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n94",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n95",
+          "keys": [
+            "e/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n96",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": "cresc-end",
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n92",
+          "keys": [
+            "a/4",
+            "c/5",
+            "e/5"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n91",
+          "keys": [
+            "a/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "A",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n102",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "f",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n103",
+          "keys": [
+            "e/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n104",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n105",
+          "keys": [
+            "g/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n106",
+          "keys": [
+            "a/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n107",
+          "keys": [
+            "g/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n108",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n109",
+          "keys": [
+            "e/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n98",
+          "keys": [
+            "d/4",
+            "f/4",
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n99",
+          "keys": [
+            "d/4",
+            "f/4",
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n100",
+          "keys": [
+            "d/4",
+            "f/4",
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n101",
+          "keys": [
+            "d/4",
+            "f/4",
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n97",
+          "keys": [
+            "d/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "Tutti",
+      "chord": "D",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n115",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n116",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n117",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n118",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n119",
+          "keys": [
+            "e/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n120",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n121",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n122",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n111",
+          "keys": [
+            "a/4",
+            "c/5",
+            "e/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n112",
+          "keys": [
+            "a/4",
+            "c/5",
+            "e/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n113",
+          "keys": [
+            "a/4",
+            "c/5",
+            "e/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n114",
+          "keys": [
+            "a/4",
+            "c/5",
+            "e/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n110",
+          "keys": [
+            "a/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "A",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n128",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n129",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n130",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n131",
+          "keys": [
+            "e/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n132",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n133",
+          "keys": [
+            "e/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n134",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n135",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n124",
+          "keys": [
+            "b/4",
+            "d/5",
+            "f/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n125",
+          "keys": [
+            "b/4",
+            "d/5",
+            "f/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n126",
+          "keys": [
+            "b/4",
+            "d/5",
+            "f/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n127",
+          "keys": [
+            "b/4",
+            "d/5",
+            "f/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n123",
+          "keys": [
+            "b/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "Bm",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n141",
+          "keys": [
+            "f/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n142",
+          "keys": [
+            "g/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n143",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n144",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n145",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n146",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n147",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n148",
+          "keys": [
+            "g/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n137",
+          "keys": [
+            "f/4",
+            "a/4",
+            "c/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n138",
+          "keys": [
+            "f/4",
+            "a/4",
+            "c/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n139",
+          "keys": [
+            "f/4",
+            "a/4",
+            "c/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n140",
+          "keys": [
+            "f/4",
+            "a/4",
+            "c/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n136",
+          "keys": [
+            "f/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "F#m",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n154",
+          "keys": [
+            "g/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n155",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n156",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n157",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n158",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n159",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n160",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n161",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n150",
+          "keys": [
+            "g/4",
+            "b/4",
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n151",
+          "keys": [
+            "g/4",
+            "b/4",
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n152",
+          "keys": [
+            "g/4",
+            "b/4",
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n153",
+          "keys": [
+            "g/4",
+            "b/4",
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n149",
+          "keys": [
+            "g/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "G",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n167",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n168",
+          "keys": [
+            "e/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n169",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n170",
+          "keys": [
+            "g/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n171",
+          "keys": [
+            "a/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n172",
+          "keys": [
+            "g/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n173",
+          "keys": [
+            "f/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n174",
+          "keys": [
+            "e/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n163",
+          "keys": [
+            "d/4",
+            "f/4",
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n164",
+          "keys": [
+            "d/4",
+            "f/4",
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n165",
+          "keys": [
+            "d/4",
+            "f/4",
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n166",
+          "keys": [
+            "d/4",
+            "f/4",
+            "a/4"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n162",
+          "keys": [
+            "d/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "D",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n180",
+          "keys": [
+            "g/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n181",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n182",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n183",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n184",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n185",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n186",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n187",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n176",
+          "keys": [
+            "g/4",
+            "b/4",
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n177",
+          "keys": [
+            "g/4",
+            "b/4",
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n178",
+          "keys": [
+            "g/4",
+            "b/4",
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n179",
+          "keys": [
+            "g/4",
+            "b/4",
+            "d/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n175",
+          "keys": [
+            "g/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "G",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n193",
+          "keys": [
+            "a/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n194",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n195",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n196",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n197",
+          "keys": [
+            "e/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n198",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n199",
+          "keys": [
+            "c/5"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n200",
+          "keys": [
+            "b/4"
+          ],
+          "duration": "8",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n189",
+          "keys": [
+            "a/4",
+            "c/5",
+            "e/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n190",
+          "keys": [
+            "a/4",
+            "c/5",
+            "e/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n191",
+          "keys": [
+            "a/4",
+            "c/5",
+            "e/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        },
+        {
+          "id": "n192",
+          "keys": [
+            "a/4",
+            "c/5",
+            "e/5"
+          ],
+          "duration": "q",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n188",
+          "keys": [
+            "a/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "A",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "single"
+    },
+    {
+      "upper": [
+        {
+          "id": "n203",
+          "keys": [
+            "d/5"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "p",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "lower": [
+        {
+          "id": "n202",
+          "keys": [
+            "d/4",
+            "f/4",
+            "a/4"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "pedal": [
+        {
+          "id": "n201",
+          "keys": [
+            "d/2"
+          ],
+          "duration": "w",
+          "dotted": false,
+          "isRest": false,
+          "selected": false,
+          "tieToNext": false,
+          "slur": null,
+          "dynamic": "",
+          "hairpin": null,
+          "lyric": "",
+          "articulation": "",
+          "tupletId": null,
+          "tupletCount": null
+        }
+      ],
+      "registration": "",
+      "chord": "D",
+      "repeatStart": false,
+      "repeatEnd": false,
+      "marker": "",
+      "barlineEnd": "final"
+    }
+  ]
+}

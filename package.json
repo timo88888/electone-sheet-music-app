@@ -1,0 +1,47 @@
+{
+  "name": "electone-sheet-music-app",
+  "version": "0.1.0",
+  "description": "エレクトーン楽譜生成アプリ",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "publish": "electron-builder --win --publish always"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "private": true,
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "vexflow": "^5.0.0"
+  },
+  "allowScripts": {
+    "electron@32.3.3": true,
+    "electron-winstaller@5.4.0": true
+  },
+  "build": {
+    "appId": "com.timo88888.electone-sheet-music-app",
+    "productName": "エレクトーン楽譜生成アプリ",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "timo88888",
+      "repo": "electone-sheet-music-app"
+    }
+  }
+}

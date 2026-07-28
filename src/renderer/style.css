@@ -1,0 +1,441 @@
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: "Hiragino Sans", "Yu Gothic", sans-serif;
+  background: #e8e8e8;
+  color: #222;
+  /* Dragging on the score to place notes or select a range would otherwise
+     also trigger the browser's native text/element selection (stray blue
+     highlight bars with no function of their own). Text inputs opt back in
+     below so typing still works normally. */
+  user-select: none;
+  -webkit-user-select: none;
+  /* Only the score area scrolls (see .score-scroll) — the quickbar and
+     ribbon above it stay fixed on screen regardless of score length. */
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+input, textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+button, input, select {
+  font-family: inherit;
+}
+
+/* ---------- quick-access strip ---------- */
+
+.quickbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #1e2430;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.qb-title { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #ddd; }
+.qb-title input { width: 14em; }
+.qb-measure-count { font-size: 12px; color: #bbb; white-space: nowrap; }
+.qb-bpm { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #ddd; }
+/* Wide enough (plus right padding) that a 3-digit value like "300" never
+   sits behind the number input's up/down spinner buttons. */
+.bpm-input { width: 4.6em; padding-right: 4px; }
+.qb-sep { width: 1px; height: 20px; background: #444; }
+
+/* ---------- ribbon tabs ---------- */
+
+.ribbon-tabs {
+  display: flex;
+  gap: 2px;
+  background: #2f3542;
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+
+.ribbon-tab {
+  padding: 7px 18px;
+  border: none;
+  background: transparent;
+  color: #bbb;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+}
+.ribbon-tab:hover { background: #3a4152; color: #fff; }
+.ribbon-tab.active { background: #444b5a; color: #fff; font-weight: bold; }
+
+/* ---------- ribbon panels ---------- */
+
+.ribbon-panel {
+  display: none;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0;
+  background: #444b5a;
+  padding: 8px 12px;
+  border-bottom: 2px solid #2f3542;
+  flex-shrink: 0;
+}
+.ribbon-panel.active { display: flex; }
+
+.ribbon-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0 14px;
+  border-right: 1px solid #5a6272;
+  min-height: 52px;
+  justify-content: center;
+}
+.ribbon-group:last-child { border-right: none; }
+
+.group-label { font-size: 10px; color: #cfd3db; white-space: nowrap; }
+.group-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.hint-text { font-size: 10px; color: #9aa0aa; }
+
+.range-label {
+  font-size: 11px;
+  color: #ffd479;
+  white-space: nowrap;
+  min-width: 6em;
+}
+
+/* ---------- shared control styling ---------- */
+
+button {
+  font-size: 13px;
+  padding: 5px 8px;
+  border: 1px solid #5a6272;
+  background: #565f70;
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+}
+button:hover { background: #667082; }
+button.active { background: #1a73e8; border-color: #1a73e8; }
+
+input[type="text"], input[type="number"] {
+  font-size: 13px;
+  padding: 5px 8px;
+  border: 1px solid #5a6272;
+  background: #565f70;
+  color: #fff;
+  border-radius: 4px;
+  cursor: text;
+}
+
+select {
+  font-size: 13px;
+  padding: 5px 6px;
+  border: 1px solid #5a6272;
+  background: #565f70;
+  color: #fff;
+  border-radius: 4px;
+}
+
+label { font-size: 12px; color: #eee; display: flex; align-items: center; gap: 4px; }
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 30px;
+  line-height: 1;
+  font-size: 15px;
+}
+.icon-btn svg { display: block; flex-shrink: 0; }
+.icon-btn .btn-text { font-size: 10px; }
+
+.status {
+  font-size: 12px;
+  color: #ffd479;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* ---------- score area ---------- */
+
+.score-scroll {
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 20px;
+}
+
+.score-container {
+  transform-origin: top left;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: fit-content;
+}
+
+.score-page {
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.3);
+  position: relative;
+}
+
+.range-highlight {
+  position: absolute;
+  background: rgba(26, 115, 232, 0.18);
+  border: 1px solid rgba(26, 115, 232, 0.6);
+  pointer-events: none;
+}
+
+/* Overlay marking whichever note(s) are sounding right now during playback —
+   a distinct hot color so it doesn't get confused with the (blue) range
+   selection or the (orange) tie/slur/tuplet placeholder rests. */
+.playing-highlight {
+  position: absolute;
+  background: rgba(233, 30, 99, 0.22);
+  border: 1px solid rgba(233, 30, 99, 0.75);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* ---------- floating toolbox ---------- */
+
+.floating-toolbox {
+  position: fixed;
+  top: 150px;
+  right: 24px;
+  z-index: 50;
+  background: #333a48;
+  color: #fff;
+  border: 1px solid #5a6272;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  width: 190px;
+}
+.floating-toolbox[hidden] { display: none; }
+
+.floating-toolbox-handle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: #232833;
+  border-radius: 8px 8px 0 0;
+  cursor: grab;
+  font-size: 12px;
+  user-select: none;
+}
+.floating-toolbox-handle:active { cursor: grabbing; }
+
+.floating-toolbox-close {
+  padding: 0 6px;
+  min-width: auto;
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  line-height: 1;
+}
+.floating-toolbox-close:hover { background: #565f70; }
+
+.floating-toolbox-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+
+/* ---------- measure-number labels (editing aid, hidden on print) ---------- */
+
+.measure-number-label {
+  position: absolute;
+  display: flex;
+  /* Top-left of the measure, tight against the pedal (bass) stave's own
+     bottom edge — this band is now below the system, not above it. */
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding-top: 1px;
+  padding-left: 2px;
+  font-size: 10px;
+  color: #999;
+  cursor: pointer;
+  border-radius: 3px;
+  user-select: none;
+}
+.measure-number-label:hover { background: rgba(26, 115, 232, 0.12); color: #1a73e8; }
+.measure-number-label.active { background: rgba(26, 115, 232, 0.25); color: #1a73e8; font-weight: bold; }
+
+/* ---------- score header (title/composer/lyricist, page 1 only) ---------- */
+
+input.score-header-field {
+  position: absolute;
+  border: none;
+  background: transparent;
+  color: #222;
+  font-family: "Hiragino Sans", "Yu Gothic", serif;
+  padding: 2px 4px;
+  border-radius: 0;
+}
+input.score-header-field:hover, input.score-header-field:focus {
+  outline: 1px dashed #aaa;
+  background: rgba(0,0,0,0.02);
+}
+.score-title-field { text-align: center; font-size: 22px; font-weight: bold; }
+
+/* Tempo marking ("♩ = 100"), top-left of page 1 — display only, edited via
+   the quickbar's note-value select + BPM number. */
+.score-tempo-marking {
+  position: absolute;
+  font-size: 14px;
+  color: #222;
+  font-family: "Hiragino Sans", "Yu Gothic", serif;
+  white-space: nowrap;
+}
+.score-tempo-glyph {
+  font-family: "Bravura Text", "Noto Music", "Segoe UI Symbol", "Hiragino Sans", sans-serif;
+  font-size: 18px;
+  margin-right: 2px;
+}
+
+/* 作詞/作曲: stacked, right-aligned under the title — the conventional spot
+   on published scores — as a fixed label plus an editable name field. */
+.score-header-row {
+  position: absolute;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.score-header-label {
+  font-size: 12px;
+  color: #222;
+  font-family: "Hiragino Sans", "Yu Gothic", serif;
+  white-space: nowrap;
+}
+.score-header-row input.score-header-field {
+  position: static;
+  text-align: left;
+  font-size: 12px;
+  width: 160px;
+}
+
+/* 譜面全体の幅調整スライダー (形式タブ) — PPTで表の幅をドラッグするのと同じ
+   感覚で、つまみを左右にドラッグして score.measureWidthScale を変える。 */
+.width-slider-track {
+  position: relative;
+  width: 160px;
+  height: 6px;
+  background: #232833;
+  border: 1px solid #5a6272;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.width-slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  background: #1a73e8;
+  border: 1px solid #fff;
+  border-radius: 50%;
+  cursor: grab;
+}
+.width-slider-thumb:active { cursor: grabbing; }
+
+/* ---------- right-click context menu ---------- */
+
+.context-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 190px;
+  background: #333a48;
+  color: #fff;
+  border: 1px solid #5a6272;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  padding: 4px 0;
+  font-size: 13px;
+}
+.context-menu[hidden] { display: none; }
+.context-menu-item {
+  padding: 6px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.context-menu-item:hover { background: #1a73e8; }
+.context-menu-item.active { color: #7ab8ff; font-weight: bold; }
+.context-menu-header {
+  padding: 4px 14px;
+  font-size: 10px;
+  color: #999;
+  white-space: nowrap;
+}
+.context-menu-separator {
+  height: 1px;
+  background: #5a6272;
+  margin: 4px 0;
+}
+
+/* ---------- prompt/confirm modal (Electron has no window.prompt()) ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay[hidden] { display: none; }
+
+.modal-box {
+  background: #333a48;
+  color: #fff;
+  border: 1px solid #5a6272;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  padding: 16px;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.modal-title {
+  font-size: 13px;
+  color: #eee;
+}
+
+.modal-input {
+  width: 100%;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modal-primary {
+  background: #1a73e8;
+  border-color: #1a73e8;
+}
+.modal-primary:hover { background: #3086f0; }
+
+@media print {
+  .quickbar, .ribbon-tabs, .ribbon-panel, .score-scroll, .floating-toolbox,
+  .context-menu, .measure-number-label { display: block; }
+  .quickbar, .ribbon-tabs, .ribbon-panel, .floating-toolbox,
+  .context-menu, .measure-number-label { display: none; }
+  .score-scroll { overflow: visible; height: auto; padding: 0; }
+  .score-container { transform: none !important; gap: 0; }
+  .score-page { box-shadow: none; page-break-after: always; }
+  .score-header-field { outline: none !important; }
+}

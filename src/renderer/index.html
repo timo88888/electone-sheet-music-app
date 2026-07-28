@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>エレクトーン楽譜生成アプリ</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- persistent quick-access strip -->
+  <div class="quickbar">
+    <label class="qb-title">タイトル
+      <input id="title-input" type="text" />
+    </label>
+    <button id="btn-undo" title="元に戻す" class="icon-btn"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M7,7 L3,11 L7,15 M3,11 L14,11 C18,11 21,14 21,17.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button id="btn-redo" title="やり直す" class="icon-btn"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M17,7 L21,11 L17,15 M21,11 L10,11 C6,11 3,14 3,17.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button id="btn-delete" title="削除" class="icon-btn"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M5,6 L19,6 M9,6 L9,3 L15,3 L15,6 M7,6 L7,21 L17,21 L17,6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
+    <span id="measure-count" class="qb-measure-count"></span>
+    <span class="qb-sep"></span>
+    <label class="qb-bpm">テンポ <select id="bpm-note-select" class="bpm-note-select"></select> = <input id="bpm-input" type="number" min="20" max="300" class="bpm-input" /></label>
+    <button id="btn-play" title="再生/停止" class="icon-btn"><svg viewBox="0 0 24 24" width="16" height="16"><polygon points="5,3 21,12 5,21" fill="currentColor"/></svg></button>
+    <span class="qb-sep"></span>
+    <button id="btn-zoom-out" title="縮小" class="icon-btn">－</button>
+    <button id="btn-zoom-in" title="拡大" class="icon-btn">＋</button>
+    <span id="status" class="status"></span>
+  </div>
+
+  <!-- ribbon tab bar -->
+  <div class="ribbon-tabs" role="tablist">
+    <button class="ribbon-tab active" data-tab="home">ホーム</button>
+    <button class="ribbon-tab" data-tab="measure">小節</button>
+    <button class="ribbon-tab" data-tab="marks">記号</button>
+    <button class="ribbon-tab" data-tab="edit">編集</button>
+    <button class="ribbon-tab" data-tab="format">形式</button>
+    <button class="ribbon-tab" data-tab="output">出力</button>
+  </div>
+
+  <!-- ==================== HOME ==================== -->
+  <div class="ribbon-panel active" data-panel="home">
+    <div class="ribbon-group">
+      <span class="group-label">音符</span>
+      <div class="group-row">
+        <button data-duration="w" title="全音符" class="icon-btn"><svg viewBox="0 0 24 24" width="20" height="20"><ellipse cx="12" cy="13" rx="6.5" ry="4.3" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+        <button data-duration="h" title="2分音符" class="icon-btn"><svg viewBox="0 0 24 24" width="20" height="20"><ellipse cx="9" cy="17" rx="4.6" ry="3.3" fill="none" stroke="currentColor" stroke-width="2"/><line x1="13.4" y1="17" x2="13.4" y2="3" stroke="currentColor" stroke-width="2"/></svg></button>
+        <button data-duration="q" title="4分音符" class="icon-btn active"><svg viewBox="0 0 24 24" width="20" height="20"><ellipse cx="9" cy="17" rx="4.6" ry="3.3" fill="currentColor"/><line x1="13.4" y1="17" x2="13.4" y2="3" stroke="currentColor" stroke-width="2"/></svg></button>
+        <button data-duration="8" title="8分音符" class="icon-btn"><svg viewBox="0 0 24 24" width="20" height="20"><ellipse cx="9" cy="17" rx="4.6" ry="3.3" fill="currentColor"/><line x1="13.4" y1="17" x2="13.4" y2="3" stroke="currentColor" stroke-width="2"/><path d="M13.4,3 C19,6 19,10 13.6,11.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <button data-duration="16" title="16分音符" class="icon-btn"><svg viewBox="0 0 24 24" width="20" height="20"><ellipse cx="9" cy="17" rx="4.6" ry="3.3" fill="currentColor"/><line x1="13.4" y1="17" x2="13.4" y2="3" stroke="currentColor" stroke-width="2"/><path d="M13.4,3 C19,5.5 19,8.5 13.6,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M13.4,7.5 C19,10 19,13 13.6,14.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <button data-toggle="dot" title="付点" class="icon-btn"><svg viewBox="0 0 24 24" width="14" height="14"><circle cx="12" cy="12" r="5" fill="currentColor"/></svg></button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">休符</span>
+      <div class="group-row">
+        <button data-rest="w" title="全休符" class="icon-btn"><svg viewBox="0 0 24 24" width="18" height="12"><rect x="6" y="9" width="10" height="4" fill="currentColor"/></svg></button>
+        <button data-rest="h" title="2分休符" class="icon-btn"><svg viewBox="0 0 24 24" width="18" height="12"><rect x="6" y="11" width="10" height="4" fill="currentColor"/></svg></button>
+        <button data-rest="q" title="4分休符" class="icon-btn"><svg viewBox="0 0 24 24" width="16" height="20"><path d="M8,3 L16,9 L9,13 L16,17 L8,21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button data-rest="8" title="8分休符" class="icon-btn"><svg viewBox="0 0 24 24" width="16" height="20"><circle cx="15" cy="5" r="2.2" fill="currentColor"/><path d="M14,7 C8,11 8,16 13,20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <button data-rest="16" title="16分休符" class="icon-btn"><svg viewBox="0 0 24 24" width="16" height="20"><circle cx="16" cy="4" r="2" fill="currentColor"/><circle cx="13" cy="10" r="2" fill="currentColor"/><path d="M15,6 C9,10 9,16 14,20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">臨時記号</span>
+      <div class="group-row">
+        <button data-acc="#" title="シャープ" class="icon-btn">♯</button>
+        <button data-acc="b" title="フラット" class="icon-btn">♭</button>
+        <button data-acc="n" title="ナチュラル(臨時記号なし)" class="icon-btn">♮</button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">つなぎ(音符を選択して適用)</span>
+      <div class="group-row">
+        <button data-tone-action="tie" title="タイ:選択中の音符から、次の同じ高さの音符へタイをつなげます。次に同じ高さの音がなければ自動で追加します" class="icon-btn">タイ</button>
+        <button data-tone-action="slur" title="スラー:選択中の音符でクリックした後、スラーの終わりにしたい音符をクリックしてください" class="icon-btn">スラー</button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">連符(選択して音符を追加)</span>
+      <div class="group-row">
+        <button data-link="tuplet3" title="三連符:音符と、あと2つ分の休符を追加します。休符をクリックすると音符に変えられます" class="icon-btn">3連符</button>
+        <button data-link="tuplet5" title="五連符:音符と、あと4つ分の休符を追加します。休符をクリックすると音符に変えられます" class="icon-btn">5連符</button>
+        <button data-link="tuplet7" title="七連符:音符と、あと6つ分の休符を追加します。休符をクリックすると音符に変えられます" class="icon-btn">7連符</button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">小節</span>
+      <div class="group-row">
+        <button id="btn-add-measure">追加</button>
+        <button id="btn-remove-measure">削除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MEASURE ==================== -->
+  <div class="ribbon-panel" data-panel="measure">
+    <div class="ribbon-group">
+      <span class="group-label">拍子・弱起</span>
+      <div class="group-row">
+        <input id="timesig-input" type="text" style="width:4em" />
+        <button id="btn-apply-timesig">適用</button>
+        <label>弱起拍数(0=なし) <input id="pickup-input" type="number" min="0" max="8" step="0.5" style="width:4em" /></label>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">調号</span>
+      <div class="group-row">
+        <select id="keysig-select"></select>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">音部記号</span>
+      <div class="group-row">
+        <label>上鍵盤 <select id="clef-upper"></select></label>
+        <label>下鍵盤 <select id="clef-lower"></select></label>
+        <label>ペダル <select id="clef-pedal"></select></label>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">対象小節</span>
+      <div class="group-row">
+        <label>番号 <input id="measure-target-input" type="number" min="1" style="width:4em" /></label>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">小節線</span>
+      <div class="group-row">
+        <select id="barline-select">
+          <option value="single">通常線</option>
+          <option value="double">二重線</option>
+          <option value="final">終止線</option>
+        </select>
+        <button id="btn-apply-barline">適用</button>
+        <button id="btn-repeat-start" title="リピート開始" class="icon-btn"><svg viewBox="0 0 24 24" width="16" height="22"><line x1="4" y1="2" x2="4" y2="22" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="2" x2="8" y2="22" stroke="currentColor" stroke-width="3"/><circle cx="14" cy="9" r="1.8" fill="currentColor"/><circle cx="14" cy="15" r="1.8" fill="currentColor"/></svg></button>
+        <button id="btn-repeat-end" title="リピート終了" class="icon-btn"><svg viewBox="0 0 24 24" width="16" height="22"><circle cx="10" cy="9" r="1.8" fill="currentColor"/><circle cx="10" cy="15" r="1.8" fill="currentColor"/><line x1="16" y1="2" x2="16" y2="22" stroke="currentColor" stroke-width="3"/><line x1="20" y1="2" x2="20" y2="22" stroke="currentColor" stroke-width="1.5"/></svg></button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">マーカー</span>
+      <div class="group-row">
+        <select id="marker-select">
+          <option value="">なし</option>
+          <option value="Segno">Segno</option>
+          <option value="D.C.">D.C.</option>
+          <option value="D.S.">D.S.</option>
+          <option value="Fine">Fine</option>
+          <option value="Coda">Coda</option>
+        </select>
+        <button id="btn-apply-marker">適用</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MARKS (per-note) ==================== -->
+  <div class="ribbon-panel" data-panel="marks">
+    <div class="ribbon-group">
+      <span class="group-label">強弱・抑揚</span>
+      <div class="group-row">
+        <select id="dynamic-select">
+          <option value="">強弱なし</option>
+          <option value="pp">pp</option>
+          <option value="p">p</option>
+          <option value="mp">mp</option>
+          <option value="mf">mf</option>
+          <option value="f">f</option>
+          <option value="ff">ff</option>
+        </select>
+        <button id="btn-cresc-start" title="クレッシェンド開始" class="icon-btn"><svg viewBox="0 0 24 16" width="24" height="16"><path d="M2,8 L22,2 M2,8 L22,14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="btn-text">開始</span></button>
+        <button id="btn-cresc-end" title="クレッシェンド終了" class="icon-btn"><svg viewBox="0 0 24 16" width="24" height="16"><path d="M2,8 L22,2 M2,8 L22,14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="btn-text">終了</span></button>
+        <button id="btn-decresc-start" title="デクレッシェンド開始" class="icon-btn"><svg viewBox="0 0 24 16" width="24" height="16"><path d="M2,2 L22,8 L2,14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="btn-text">開始</span></button>
+        <button id="btn-decresc-end" title="デクレッシェンド終了" class="icon-btn"><svg viewBox="0 0 24 16" width="24" height="16"><path d="M2,2 L22,8 L2,14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="btn-text">終了</span></button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">アーティキュレーション</span>
+      <div class="group-row">
+        <select id="articulation-select">
+          <option value="">なし</option>
+          <option value="staccato">スタッカート</option>
+          <option value="tenuto">テヌート</option>
+          <option value="accent">アクセント</option>
+          <option value="marcato">マルカート</option>
+        </select>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">歌詞</span>
+      <div class="group-row">
+        <button id="btn-lyric">編集</button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">リハーサル記号(選択中の音符に設定)</span>
+      <div class="group-row">
+        <select id="rehearsal-select"></select>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">レジストレーション(選択中の音符に設定)</span>
+      <div class="group-row">
+        <select id="registration-select"></select>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== EDIT ==================== -->
+  <div class="ribbon-panel" data-panel="edit">
+    <div class="ribbon-group">
+      <span class="group-label">移調(音階度数)</span>
+      <div class="group-row">
+        <label>開始 <input id="transpose-from-input" type="number" min="1" style="width:4em" /></label>
+        <label>終了 <input id="transpose-to-input" type="number" min="1" style="width:4em" /></label>
+        <label>度数 <input id="transpose-steps-input" type="number" step="1" style="width:4em" /></label>
+        <button id="btn-transpose">適用</button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">範囲選択(譜面をドラッグ、右クリックでメニュー)</span>
+      <div class="group-row">
+        <span id="range-selection-label" class="range-label">未選択</span>
+        <button id="btn-range-copy">コピー</button>
+        <button id="btn-range-delete">まとめて削除</button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">ペースト</span>
+      <div class="group-row">
+        <label>貼付先小節番号 <input id="paste-target-input" type="number" min="1" style="width:4em" /></label>
+        <button id="btn-range-paste">ペースト</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== FORMAT ==================== -->
+  <div class="ribbon-panel" data-panel="format">
+    <div class="ribbon-group">
+      <span class="group-label">譜面全体の幅（ドラッグで調整）</span>
+      <div class="group-row">
+        <div id="width-slider-track" class="width-slider-track">
+          <div id="width-slider-thumb" class="width-slider-thumb"></div>
+        </div>
+        <span id="width-slider-value" class="hint-text">100%</span>
+      </div>
+      <span class="hint-text">広げるほど1段あたりの小節数が減り、狭めるほど増えます。各小節の幅は音符の数に応じて自動調整されます。</span>
+    </div>
+  </div>
+
+  <!-- ==================== OUTPUT ==================== -->
+  <div class="ribbon-panel" data-panel="output">
+    <div class="ribbon-group">
+      <span class="group-label">ファイル</span>
+      <div class="group-row">
+        <button id="btn-save">保存</button>
+        <button id="btn-open">開く</button>
+        <input id="open-input" type="file" accept="application/json" style="display:none" />
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">書き出し</span>
+      <div class="group-row">
+        <button id="btn-print">PDF書き出し/印刷</button>
+        <button id="btn-export-midi">MIDI書き出し</button>
+        <button id="btn-export-wav">WAV書き出し</button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">テンプレート</span>
+      <div class="group-row">
+        <button id="btn-save-template">保存</button>
+        <button id="btn-load-template">新規作成</button>
+        <input id="template-input" type="file" accept="application/json" style="display:none" />
+      </div>
+    </div>
+  </div>
+
+  <div class="score-scroll">
+    <div id="score-container" class="score-container"></div>
+  </div>
+
+  <!-- floating note/rest toolbox -->
+  <div id="context-menu" class="context-menu" hidden></div>
+
+  <div id="floating-toolbox" class="floating-toolbox" hidden>
+    <div id="floating-toolbox-handle" class="floating-toolbox-handle">
+      <span>音符・休符</span>
+      <button id="floating-toolbox-close" class="floating-toolbox-close" title="閉じる">×</button>
+    </div>
+    <div class="floating-toolbox-body">
+      <div class="group-row">
+        <button data-duration="w" title="全音符" class="icon-btn"><svg viewBox="0 0 24 24" width="18" height="18"><ellipse cx="12" cy="13" rx="6.5" ry="4.3" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+        <button data-duration="h" title="2分音符" class="icon-btn"><svg viewBox="0 0 24 24" width="18" height="18"><ellipse cx="9" cy="17" rx="4.6" ry="3.3" fill="none" stroke="currentColor" stroke-width="2"/><line x1="13.4" y1="17" x2="13.4" y2="3" stroke="currentColor" stroke-width="2"/></svg></button>
+        <button data-duration="q" title="4分音符" class="icon-btn"><svg viewBox="0 0 24 24" width="18" height="18"><ellipse cx="9" cy="17" rx="4.6" ry="3.3" fill="currentColor"/><line x1="13.4" y1="17" x2="13.4" y2="3" stroke="currentColor" stroke-width="2"/></svg></button>
+        <button data-duration="8" title="8分音符" class="icon-btn"><svg viewBox="0 0 24 24" width="18" height="18"><ellipse cx="9" cy="17" rx="4.6" ry="3.3" fill="currentColor"/><line x1="13.4" y1="17" x2="13.4" y2="3" stroke="currentColor" stroke-width="2"/><path d="M13.4,3 C19,6 19,10 13.6,11.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <button data-duration="16" title="16分音符" class="icon-btn"><svg viewBox="0 0 24 24" width="18" height="18"><ellipse cx="9" cy="17" rx="4.6" ry="3.3" fill="currentColor"/><line x1="13.4" y1="17" x2="13.4" y2="3" stroke="currentColor" stroke-width="2"/><path d="M13.4,3 C19,5.5 19,8.5 13.6,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M13.4,7.5 C19,10 19,13 13.6,14.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+      </div>
+      <div class="group-row">
+        <button data-toggle="dot" title="付点" class="icon-btn"><svg viewBox="0 0 24 24" width="12" height="12"><circle cx="12" cy="12" r="5" fill="currentColor"/></svg></button>
+      </div>
+      <div class="group-row">
+        <button data-tone-action="tie" title="タイ" class="icon-btn">タイ</button>
+        <button data-tone-action="slur" title="スラー" class="icon-btn">スラー</button>
+      </div>
+      <div class="group-row">
+        <button data-link="tuplet3" title="三連符" class="icon-btn">3連符</button>
+        <button data-link="tuplet5" title="五連符" class="icon-btn">5連符</button>
+        <button data-link="tuplet7" title="七連符" class="icon-btn">7連符</button>
+      </div>
+      <div class="group-row">
+        <button data-rest="w" title="全休符" class="icon-btn"><svg viewBox="0 0 24 24" width="16" height="11"><rect x="6" y="9" width="10" height="4" fill="currentColor"/></svg></button>
+        <button data-rest="h" title="2分休符" class="icon-btn"><svg viewBox="0 0 24 24" width="16" height="11"><rect x="6" y="11" width="10" height="4" fill="currentColor"/></svg></button>
+        <button data-rest="q" title="4分休符" class="icon-btn"><svg viewBox="0 0 24 24" width="14" height="18"><path d="M8,3 L16,9 L9,13 L16,17 L8,21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button data-rest="8" title="8分休符" class="icon-btn"><svg viewBox="0 0 24 24" width="14" height="18"><circle cx="15" cy="5" r="2.2" fill="currentColor"/><path d="M14,7 C8,11 8,16 13,20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <button data-rest="16" title="16分休符" class="icon-btn"><svg viewBox="0 0 24 24" width="14" height="18"><circle cx="16" cy="4" r="2" fill="currentColor"/><circle cx="13" cy="10" r="2" fill="currentColor"/><path d="M15,6 C9,10 9,16 14,20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+      </div>
+      <div class="group-row">
+        <button data-acc="#" title="シャープ" class="icon-btn">♯</button>
+        <button data-acc="b" title="フラット" class="icon-btn">♭</button>
+        <button data-acc="n" title="ナチュラル" class="icon-btn">♮</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Electron doesn't implement window.prompt(), so text-entry dialogs
+       (registration/chord/lyric text, "delete this measure?" confirmation)
+       use this custom modal instead of the native prompt()/confirm(). -->
+  <div id="prompt-modal" class="modal-overlay" hidden>
+    <div class="modal-box">
+      <div id="prompt-modal-title" class="modal-title"></div>
+      <input id="prompt-modal-input" type="text" class="modal-input" />
+      <div class="modal-actions">
+        <button id="prompt-modal-cancel">キャンセル</button>
+        <button id="prompt-modal-ok" class="modal-primary">OK</button>
+      </div>
+    </div>
+  </div>
+  <div id="confirm-modal" class="modal-overlay" hidden>
+    <div class="modal-box">
+      <div id="confirm-modal-message" class="modal-title"></div>
+      <div class="modal-actions">
+        <button id="confirm-modal-cancel">キャンセル</button>
+        <button id="confirm-modal-ok" class="modal-primary">OK</button>
+      </div>
+    </div>
+  </div>
+  <div id="chord-modal" class="modal-overlay" hidden>
+    <div class="modal-box">
+      <div id="chord-modal-title" class="modal-title"></div>
+      <div class="group-row">
+        <select id="chord-modal-root"></select>
+        <select id="chord-modal-quality"></select>
+      </div>
+      <div class="modal-actions">
+        <button id="chord-modal-cancel">キャンセル</button>
+        <button id="chord-modal-ok" class="modal-primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
