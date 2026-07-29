@@ -32,17 +32,15 @@ export const LAYOUT = {
   pageMargin: 40,
   staveGap: 100,
   // Vertical gap between one system's measure-number row (just below its
-  // pedal stave) and the next system's コード row. Needs *some* room for
+  // pedal stave) and the next system's mark row. Needs *some* room for
   // ledger lines plus dynamics/lyric text hanging below the pedal stave.
   systemGap: 80,
   topMargin: 110,
-  // Row (above the top/upper stave) that holds コード text — the highest of
-  // the two reserved rows, since リハーサル/レジストレーション sit right at
-  // the stave's own top edge (see rehearsalBandHeight below).
-  chordRowHeight: 16,
-  // Tight band right above the stave itself, holding リハーサル/
-  // レジストレーション boxes (see renderScore's per-note mark drawing) — the
-  // exact slot the measure number used to occupy.
+  // Tight band right above the stave itself, holding コード text and
+  // リハーサル/レジストレーション boxes together on one line (see
+  // renderScore's per-note mark drawing) — the exact slot the measure
+  // number used to occupy. Priority when they'd collide is コード, then
+  // リハーサル, then レジストレーション — later ones shift right.
   rehearsalBandHeight: 18,
   // Now below the pedal stave (moved off the top of the system) — see
   // renderMeasureNumbers in app.js.
@@ -184,18 +182,22 @@ function buildStaveNotes(measure, part, clef) {
         }
       });
     }
+    // Horizontal-drag note-range selection (see app.js's noteRangeSelection)
+    // — a whole note (every tone of a chord together) is the unit, so every
+    // key gets the same highlight rather than picking one like n.selected.
+    if (n.rangeSelected) {
+      if (n.isRest) {
+        vfNote.setStyle({ fillStyle: '#9c27b0', strokeStyle: '#9c27b0' });
+      } else {
+        n.keys.forEach((_, idx) => vfNote.setKeyStyle(idx, { fillStyle: '#9c27b0', strokeStyle: '#9c27b0' }));
+      }
+    }
     if (n.articulation && ARTICULATION_CODES[n.articulation]) {
       vfNote.addModifier(new Articulation(ARTICULATION_CODES[n.articulation]), 0);
     }
     if (n.dynamic) {
       // dynamics conventionally sit below the staff
       const anno = new Annotation(n.dynamic);
-      anno.setVerticalJustification(AnnotationVerticalJustify.BOTTOM);
-      vfNote.addModifier(anno, 0);
-    }
-    if (n.lyric) {
-      // lyrics sit further below, under any dynamics text
-      const anno = new Annotation(n.lyric);
       anno.setVerticalJustification(AnnotationVerticalJustify.BOTTOM);
       vfNote.addModifier(anno, 0);
     }
@@ -322,19 +324,29 @@ function findAnchorForBeat(measure, notesHitByPart, beat) {
 
 // Draws this measure's per-note/per-beat annotations once every part's note
 // x positions are known (notesHitByPart, built right after each stave's
-// notes/hitMap in renderScore): コード directly above the 下鍵盤 note it
-// belongs to, tight to the upper stave's own top edge, and リハーサル/
-// レジストレーション boxes just above that (in the slot the measure number
-// used to occupy) — registration nudges right when it would otherwise land
-// on top of a rehearsal box.
+// notes/hitMap in renderScore): コード, リハーサル, and レジストレーション all
+// share one row (the slot the measure number used to occupy), in that
+// priority order — コード never moves, then リハーサル nudges right of any
+// コード it would overlap, then レジストレーション nudges right of both.
 function drawPerNoteMarks({
-  ctx, page, measureIndex, measure, notesHitByPart, chordY, boxY, markHitMap,
+  ctx, page, measureIndex, measure, notesHitByPart, boxY, markHitMap,
 }) {
+  const shiftPast = (centerX, width, placed) => {
+    let cx = centerX;
+    placed.forEach((r) => {
+      const boxX = cx - width / 2;
+      const overlaps = boxX < r.x1 + MARK_BOX_GAP && boxX + width > r.x0 - MARK_BOX_GAP;
+      if (overlaps) cx = r.x1 + MARK_BOX_GAP + width / 2;
+    });
+    return cx;
+  };
+
+  const placedChord = [];
   (notesHitByPart.lower || []).forEach((entry) => {
     const note = entry.noteRef;
     if (!note || note.isRest || !note.chord) return;
     const x = entry.xs ? Math.min(...entry.xs) : entry.x;
-    const y = chordY;
+    const y = boxY + MARK_BOX_HEIGHT - 4;
     ctx.save();
     ctx.setFont('Arial', 10, '');
     // A tentative auto-detected chord (more than one equally-valid reading,
@@ -344,9 +356,12 @@ function drawPerNoteMarks({
     ctx.fillText(note.chord, x, y);
     ctx.restore();
     const w = textWidthAt(ctx, note.chord, 10);
+    const x0 = x - 2;
+    const x1 = x + w + 2;
     markHitMap.push({
-      page, measureIndex, part: 'lower', noteId: note.id, kind: 'chord', x0: x - 2, x1: x + w + 2, y0: y - 14, y1: y + 4,
+      page, measureIndex, part: 'lower', noteId: note.id, kind: 'chord', x0, x1, y0: boxY, y1: boxY + MARK_BOX_HEIGHT,
     });
+    placedChord.push({ x0, x1 });
   });
 
   const placedRehearsal = [];
@@ -354,7 +369,9 @@ function drawPerNoteMarks({
     if (!mark.rehearsal) return;
     const anchor = findAnchorForBeat(measure, notesHitByPart, mark.beat);
     if (!anchor) return;
-    const { x0, x1 } = drawMarkBox(ctx, mark.rehearsal, anchor.x, boxY);
+    const width = textWidthAt(ctx, mark.rehearsal, 9) + MARK_BOX_PAD_X * 2;
+    const centerX = shiftPast(anchor.x, width, placedChord);
+    const { x0, x1 } = drawMarkBox(ctx, mark.rehearsal, centerX, boxY);
     markHitMap.push({
       page, measureIndex, part: anchor.part, noteId: anchor.note.id, kind: 'rehearsal', x0, x1, y0: boxY, y1: boxY + MARK_BOX_HEIGHT,
     });
@@ -366,12 +383,7 @@ function drawPerNoteMarks({
     const anchor = findAnchorForBeat(measure, notesHitByPart, mark.beat);
     if (!anchor) return;
     const width = textWidthAt(ctx, mark.registration, 9) + MARK_BOX_PAD_X * 2;
-    let centerX = anchor.x;
-    placedRehearsal.forEach((r) => {
-      const boxX = centerX - width / 2;
-      const overlaps = boxX < r.x1 + MARK_BOX_GAP && boxX + width > r.x0 - MARK_BOX_GAP;
-      if (overlaps) centerX = r.x1 + MARK_BOX_GAP + width / 2;
-    });
+    const centerX = shiftPast(anchor.x, width, [...placedChord, ...placedRehearsal]);
     const { x0, x1 } = drawMarkBox(ctx, mark.registration, centerX, boxY);
     markHitMap.push({
       page, measureIndex, part: anchor.part, noteId: anchor.note.id, kind: 'registration', x0, x1, y0: boxY, y1: boxY + MARK_BOX_HEIGHT,
@@ -393,7 +405,7 @@ export function renderScore(container, score, layout = LAYOUT) {
 
   const {
     linesPerPage, pageWidth, pageHeight, pageMargin, staveGap, systemGap, topMargin,
-    chordRowHeight, rehearsalBandHeight, measureNumberHeight, clefExtraWidth, timeSigExtraWidth, titleHeaderHeight,
+    rehearsalBandHeight, measureNumberHeight, clefExtraWidth, timeSigExtraWidth, titleHeaderHeight,
   } = layout;
 
   const lines = computeLines(score, layout);
@@ -462,8 +474,8 @@ export function renderScore(container, score, layout = LAYOUT) {
 
     for (let line = lineStart; line < lineEnd; line++) {
       const measureIndices = lines[line];
-      const lineY = topMargin + pageTitleExtra + (line - lineStart) * (staveGap * 2 + systemGap + chordRowHeight + rehearsalBandHeight);
-      const staveTopY = lineY + chordRowHeight + rehearsalBandHeight;
+      const lineY = topMargin + pageTitleExtra + (line - lineStart) * (staveGap * 2 + systemGap + rehearsalBandHeight);
+      const staveTopY = lineY + rehearsalBandHeight;
       const availableWidth = pageWidth - pageMargin * 2;
       const keySigWidth = keySignatureExtraWidth(score, layout);
       // The first column of every line carries a clef and key signature (and,
@@ -490,6 +502,7 @@ export function renderScore(container, score, layout = LAYOUT) {
         : nominalWidths;
 
       let colX = pageMargin;
+      let linePedalStave = null;
       measureIndices.forEach((m, colIndex) => {
         const isFirstOfLine = colIndex === 0;
         const measureWidth = isFirstOfLine ? widths[colIndex] + firstColExtra : widths[colIndex];
@@ -510,6 +523,7 @@ export function renderScore(container, score, layout = LAYOUT) {
           stave.setContext(ctx).draw();
           staves[part] = stave;
         });
+        linePedalStave = staves.pedal;
 
         if (isFirstOfLine) {
           const brace = new StaveConnector(staves.upper, staves.pedal).setType('brace');
@@ -524,18 +538,22 @@ export function renderScore(container, score, layout = LAYOUT) {
           ctx.save();
           ctx.setFont('Arial', 10, 'bold');
           const w = ctx.measureText(measure.marker).width;
-          ctx.fillText(measure.marker, x + measureWidth - w - 4, lineY + chordRowHeight - 4);
+          ctx.fillText(measure.marker, x + measureWidth - w - 4, lineY + rehearsalBandHeight - 6);
           ctx.restore();
         }
 
         // Measure number now sits just below the pedal (bass) stave rather
         // than above the system — see style.css's .measure-number-label.
+        // Its click/hit region is sized to the digit itself (not the whole
+        // measure width) so it doesn't swallow clicks meant for the stave.
+        const numberText = String(m + 1);
+        const numberWidth = textWidthAt(ctx, numberText, 10);
         const numberY0 = staves.pedal.getBottomLineY() + 4;
         annotationHitMap.push({
           page,
           measureIndex: m,
           x0: x,
-          x1: x + measureWidth,
+          x1: x + numberWidth + 6,
           numberY0,
           numberY1: numberY0 + measureNumberHeight,
         });
@@ -686,11 +704,22 @@ export function renderScore(container, score, layout = LAYOUT) {
           measureIndex: m,
           measure,
           notesHitByPart,
-          chordY: lineY + chordRowHeight - 4,
-          boxY: lineY + chordRowHeight + 2,
+          boxY: lineY + 2,
           markHitMap,
         });
       });
+
+      // 歌詞 — one line of text per system, at a consistent height below the
+      // pedal stave (below the measure number), regardless of which specific
+      // measure on this line it was set from (see targetMeasure's 対象小節).
+      const lineLyric = measureIndices.map((m) => score.measures[m].lyric).find((t) => t);
+      if (lineLyric && linePedalStave) {
+        const lyricY = linePedalStave.getBottomLineY() + measureNumberHeight + 10;
+        ctx.save();
+        ctx.setFont('Arial', 11, '');
+        ctx.fillText(lineLyric, pageMargin, lyricY);
+        ctx.restore();
+      }
     }
   }
 

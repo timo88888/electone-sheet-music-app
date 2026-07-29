@@ -9,12 +9,13 @@ import {
 } from './scoreModel.js';
 import { renderScore, LAYOUT } from './staffRenderer.js';
 import {
-  pitchForIndex, indexForY, transposeKey, parseKey, buildKey,
+  pitchForIndex, indexForY, transposeKey, parseKey, buildKey, shiftSemitone,
 } from './pitchMap.js';
 import {
-  Player, renderScoreToWavBuffer, buildPlaybackEvents, PLAYBACK_LEAD,
+  Player, renderScoreToWavBuffer, buildPlaybackEvents, PLAYBACK_LEAD, DEFAULT_INSTRUMENT,
 } from './playback.js';
 import { buildMidiFile } from './midiExport.js';
+import { getSoundfontNames } from '../../node_modules/smplr/dist/index.mjs';
 
 // Upgrades a score loaded from an older save file.
 // - `note.keys` used to be an array of plain VexFlow key strings with
@@ -33,6 +34,16 @@ function migrateScore(loaded) {
   (loaded.measures || []).forEach((measure) => {
     if (measure.lineBreak === undefined) measure.lineBreak = false;
     if (!measure.marks) measure.marks = [];
+    if (measure.lyric === undefined) measure.lyric = '';
+    // 歌詞 used to live on individual notes (one syllable each); now it's one
+    // line of text per measure's line. Best-effort: join whatever syllables
+    // this measure's notes had, in order, into one string.
+    PARTS.forEach((part) => {
+      (measure[part] || []).forEach((n) => {
+        if (n.lyric) measure.lyric = measure.lyric ? `${measure.lyric} ${n.lyric}` : n.lyric;
+        delete n.lyric;
+      });
+    });
     // コード used to live on the measure; now it's per-note. Best-effort
     // carry the old per-measure value onto the first 下鍵盤 note (a
     // hand-typed chord existed only because someone entered it, so treat it
@@ -93,6 +104,10 @@ function migrateScore(loaded) {
   if (!loaded.bpm) loaded.bpm = 100;
   if (!loaded.bpmNoteValue) loaded.bpmNoteValue = 'q';
   if (!loaded.measureWidthScale) loaded.measureWidthScale = 1;
+  if (!loaded.instruments) loaded.instruments = {};
+  PARTS.forEach((part) => {
+    if (!loaded.instruments[part]) loaded.instruments[part] = DEFAULT_INSTRUMENT;
+  });
   return loaded;
 }
 
@@ -119,6 +134,16 @@ let selectedLink = null; // null | 'tuplet3' | 'tuplet5' | 'tuplet7' — see ins
 let pendingSlurStart = null; // { measureIndex, part, noteId, keyIndex } | null — see toggleSlurFromSelectedTone
 let multiSelected = []; // { measureIndex, part, noteId, keyIndex }[] — Ctrl/Cmd+click, see showMultiSelectContextMenu
 let selectedMeasureIndex = null;
+// Whole-note (chord-as-one-unit) range selection — built by dragging
+// horizontally from an existing note (see onPageMouseDown/mousemove). Unlike
+// multiSelected (tone-granular, Ctrl/Cmd+click, for タイ/スラー/連符), this is
+// note-granular and exists for the 右クリック→コピー/削除/ペースト flow below.
+// null, or an ordered array of { measureIndex, part, noteId } once it spans
+// 2+ notes — a drag that never leaves its starting note just leaves the
+// plain single `selected` in place instead (see the "範囲選択は和音1セット
+// から" note in the user's own spec).
+let noteRangeSelection = null;
+let noteClipboard = null; // note[] (deep clones) — see copyNoteRangeSelection/pasteNotesAt
 let highlightTimers = [];
 let highlightEls = [];
 const DRAG_THRESHOLD = 6;
@@ -287,6 +312,7 @@ function markSelection() {
         n.selectedKeyIndex = n.selected ? selected.keyIndex : null;
         const multiHits = multiSelected.filter((s) => s.noteId === n.id);
         n.multiSelectedKeyIndices = multiHits.length ? multiHits.map((s) => s.keyIndex) : null;
+        n.rangeSelected = !!(noteRangeSelection && noteRangeSelection.some((s) => s.noteId === n.id));
       });
     });
   });
@@ -352,6 +378,8 @@ function syncControlsFromScore() {
   PARTS.forEach((part) => {
     const select = document.getElementById(`clef-${part}`);
     if (select) select.value = score.clefs[part];
+    const instrumentSelect = document.getElementById(`instrument-${part}`);
+    if (instrumentSelect) instrumentSelect.value = score.instruments[part] || DEFAULT_INSTRUMENT;
   });
 }
 
@@ -523,6 +551,42 @@ function findSameSlotNote(region, localX) {
   return best ? best.note : null;
 }
 
+// Nearest real note (by x) in `region` to a given x — used while dragging to
+// find which note the mouse is currently over, tolerant of landing between
+// two noteheads rather than requiring a precise hit like findClickedNote.
+function findNearestNoteIndex(region, x) {
+  let best = -1;
+  let bestDist = Infinity;
+  region.notes.forEach((rn, i) => {
+    if (!rn.noteRef) return;
+    const rx = rn.xs ? Math.min(...rn.xs) : rn.x;
+    const dist = Math.abs(rx - x);
+    if (dist < bestDist) { bestDist = dist; best = i; }
+  });
+  return best;
+}
+
+// Builds the ordered { measureIndex, part, noteId }[] from one (measureIndex,
+// noteIndex) position to another, inclusive, in the same part — swapping if
+// given back-to-front so a drag in either direction produces the same result.
+function computeNoteRange(part, m1, i1, m2, i2) {
+  let startM = m1; let startI = i1; let endM = m2; let endI = i2;
+  if (startM > endM || (startM === endM && startI > endI)) {
+    [startM, endM] = [endM, startM];
+    [startI, endI] = [endI, startI];
+  }
+  const result = [];
+  for (let mi = startM; mi <= endM; mi += 1) {
+    const notes = score.measures[mi][part];
+    const from = mi === startM ? startI : 0;
+    const to = mi === endM ? endI : notes.length - 1;
+    for (let ni = from; ni <= to && ni < notes.length; ni += 1) {
+      result.push({ measureIndex: mi, part, noteId: notes[ni].id });
+    }
+  }
+  return result;
+}
+
 function attachPageHandlers(pages) {
   pages.forEach((pageDiv, pageIndex) => {
     pageDiv.addEventListener('mousedown', (e) => onPageMouseDown(e, pageDiv, pageIndex));
@@ -640,6 +704,7 @@ function updateRangeLabel() {
 }
 
 function clearRangeSelection() {
+  noteRangeSelection = null;
   if (!rangeSelection) return;
   rangeSelection = null;
   updateRangeLabel();
@@ -961,9 +1026,14 @@ function onPageMouseDown(e, pageDiv, pageIndex) {
     // `moved` stays false (no pitch change applied yet) until the mouse
     // actually travels past DRAG_THRESHOLD — otherwise the slightest jitter
     // during a plain click-to-select would nudge the pitch by a step.
+    // `axis` picks vertical-drag-changes-pitch (existing) vs horizontal-
+    // drag-range-selects-notes (new) once the drag is big enough to tell —
+    // see the mousemove handler below.
     dragging = {
       region, note: existing.noteRef, keyIndex: existing.keyIndex, wasRest: existing.noteRef.isRest,
-      startClientX: e.clientX, startClientY: e.clientY, moved: false,
+      startClientX: e.clientX, startClientY: e.clientY, moved: false, axis: null,
+      startMeasureIndex: region.measureIndex,
+      startNoteIndex: region.notes.findIndex((rn) => rn.noteRef && rn.noteRef.id === existing.noteRef.id),
     };
     render();
     syncNoteControlsFromSelection();
@@ -992,6 +1062,19 @@ function onPageContextMenu(e, pageDiv, pageIndex) {
   const { x, y } = toLocalCoords(pageDiv, e.clientX, e.clientY);
   const region = findRegionAt(pageIndex, x, y);
   if (!region) return;
+  // The note-range menu only takes over when the right-click actually lands
+  // on a note that's part of the active selection (single `selected`, or the
+  // 2+ note drag range) — landing on blank space always falls through to the
+  // measure-range menu below, which is how ペースト (see noteClipboard) stays
+  // reachable even right after copying, while the selection is still active.
+  const hit = findClickedNote(region, x, y);
+  const hitIsInRange = hit && noteRangeSelection && noteRangeSelection.length >= 2
+    && noteRangeSelection.some((s) => s.noteId === hit.noteRef.id);
+  const hitIsSelected = hit && selected && hit.noteRef.id === selected.noteId;
+  if (hitIsInRange || hitIsSelected) {
+    showNoteRangeContextMenu(e.clientX, e.clientY);
+    return;
+  }
   clearMeasureSelection();
   const withinExisting = rangeSelection && rangeSelection.part === region.part
     && region.measureIndex >= rangeSelection.measureStart && region.measureIndex <= rangeSelection.measureEnd;
@@ -1002,7 +1085,7 @@ function onPageContextMenu(e, pageDiv, pageIndex) {
     updateRangeLabel();
     renderRangeHighlight(Array.from(scoreContainer.querySelectorAll('.score-page')));
   }
-  showRangeContextMenu(e.clientX, e.clientY);
+  showRangeContextMenu(e.clientX, e.clientY, region, x);
 }
 
 document.addEventListener('mousemove', (e) => {
@@ -1042,18 +1125,35 @@ document.addEventListener('mousemove', (e) => {
   }
   // Dragging moves only the one tone that was actually clicked (see
   // dragging.keyIndex) — the chord's other pitches, if any, are untouched.
+  // Once the drag is big enough to tell, whichever axis dominates locks in
+  // for the rest of the gesture: mostly-vertical keeps nudging this tone's
+  // pitch (existing behavior); mostly-horizontal instead grows a whole-note
+  // range selection (see computeNoteRange) — chords count as one unit either
+  // way, since selection/pitch-drag both key off the note object, not a tone.
   if (!dragging) return;
   if (!dragging.moved) {
     const dx = e.clientX - dragging.startClientX;
     const dy = e.clientY - dragging.startClientY;
     if (Math.hypot(dx, dy) <= DRAG_THRESHOLD) return;
     dragging.moved = true;
+    dragging.axis = Math.abs(dx) > Math.abs(dy) ? 'range' : 'pitch';
   }
   const pageDiv = dragging.region.page !== undefined
     ? scoreContainer.querySelectorAll('.score-page')[dragging.region.page]
     : null;
   if (!pageDiv) return;
-  const { y } = toLocalCoords(pageDiv, e.clientX, e.clientY);
+  const { x, y } = toLocalCoords(pageDiv, e.clientX, e.clientY);
+  if (dragging.axis === 'range') {
+    const region = findRegionForPart(dragging.region.page, dragging.region.part, x, y) || dragging.region;
+    const endIndex = findNearestNoteIndex(region, x);
+    if (endIndex === -1) return;
+    const range = computeNoteRange(
+      dragging.region.part, dragging.startMeasureIndex, dragging.startNoteIndex, region.measureIndex, endIndex,
+    );
+    noteRangeSelection = range.length >= 2 ? range : null;
+    render();
+    return;
+  }
   const index = indexForY(y, dragging.region.topY, dragging.region.step);
   const baseKey = pitchForIndex(dragging.region.clef, index);
   const { letter, octave } = parseKey(baseKey);
@@ -1084,24 +1184,30 @@ document.addEventListener('mouseup', () => {
     syncNoteControlsFromSelection();
   }
   if (dragging) {
-    let changed = false;
-    if (dragging.wasRest && dragging.note.isRest) {
-      dragging.note.isRest = false;
-      delete dragging.note.isPlaceholder;
-      setStatus('休符を音符にしました');
-      changed = true;
+    if (dragging.axis === 'range') {
+      // Range selection itself isn't score content — nothing to undo-record,
+      // and noteRangeSelection is already exactly what the last mousemove set.
+      dragging = null;
+    } else {
+      let changed = false;
+      if (dragging.wasRest && dragging.note.isRest) {
+        dragging.note.isRest = false;
+        delete dragging.note.isPlaceholder;
+        setStatus('休符を音符にしました');
+        changed = true;
+      }
+      // A plain click-to-select (mouse never crossed DRAG_THRESHOLD) shouldn't
+      // push a no-op undo step just because a note happened to be under it.
+      if (dragging.moved) {
+        if (dragging.note.keys.length > 1) sortNoteKeys(dragging.note);
+        changed = true;
+      }
+      if (changed) {
+        render();
+        pushHistory();
+      }
+      dragging = null;
     }
-    // A plain click-to-select (mouse never crossed DRAG_THRESHOLD) shouldn't
-    // push a no-op undo step just because a note happened to be under it.
-    if (dragging.moved) {
-      if (dragging.note.keys.length > 1) sortNoteKeys(dragging.note);
-      changed = true;
-    }
-    if (changed) {
-      render();
-      pushHistory();
-    }
-    dragging = null;
   }
 });
 
@@ -1190,7 +1296,6 @@ function insertNote(region, x, y) {
     selected: false,
     dynamic: '',
     hairpin: null,
-    lyric: '',
     articulation: '',
     tupletId: null,
     tupletCount: null,
@@ -1359,6 +1464,21 @@ document.addEventListener('keydown', (e) => {
   } else if (e.ctrlKey && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
     e.preventDefault();
     redo();
+  } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && selected) {
+    // ↑/↓ nudges the selected tone by one chromatic semitone — guarded to
+    // regular (non-form-control) focus so it doesn't hijack a number input's
+    // own native up/down spinner (e.g. 対象小節) or move a text cursor.
+    const tag = e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    const note = getSelectedNote();
+    const tone = getSelectedTone();
+    if (!note || note.isRest || !tone) return;
+    e.preventDefault();
+    tone.key = shiftSemitone(tone.key, e.key === 'ArrowUp' ? 1 : -1);
+    sortNoteKeys(note);
+    pushHistory();
+    render();
+    syncNoteControlsFromSelection();
   }
 });
 
@@ -1533,36 +1653,50 @@ function applyTieToSelectedTone() {
   const matchInNext = next && !next.isRest && next.keys.some((t) => pitchKeyOf(t.key) === pk);
 
   if (!matchInNext) {
-    const newNote = {
-      id: makeNoteId(),
-      keys: [{ key: tone.key, tieToNext: false, slurTo: null }],
-      duration: selectedDuration,
-      dotted: selectedDotted,
-      isRest: false,
-      // If the selected note is a chord, this new note only concerns this
-      // one tone — `partialChordNote` marks it so it doesn't cut off any of
-      // the chord's *other* tones' ties in flight (see its use in
-      // playback.js); it briefly means this beat and the chord's other real
-      // continuation note overlap in the written rhythm, but that's
-      // preferable to silently dropping a tie.
-      partialChordNote: note.keys.length > 1,
-      selected: false,
-      dynamic: '',
-      hairpin: null,
-      lyric: '',
-      articulation: '',
-      tupletId: null,
-      tupletCount: null,
-      ...noteAnnotationDefaults(),
-    };
-    // No matching pitch right after this note — insert one automatically
-    // (same pitch, current ribbon duration), tied, instead of requiring the
-    // user to type it themselves first. cascadeOverflow pushes it (and
-    // whatever it displaces) into the next measure if this one is already
-    // full, creating one at the end of the score if needed — same as how a
-    // real tied note would be written across the barline.
-    siblings.splice(noteIdx + 1, 0, newNote);
-    cascadeOverflow(selected.measureIndex, selected.part);
+    // Tying a SECOND tone of the same chord (e.g. tie the G, then separately
+    // tie the D) must land both tones on the same destination note, not two
+    // separate single-key notes at the same beat — the latter is an invalid
+    // same-voice collision that silently breaks the notation (VexFlow can
+    // only place one of them, so the other tie's curve looks like it never
+    // rendered). If `next` was already auto-created by an earlier tie from
+    // this same chord (partialChordNote, still the same written duration),
+    // add this tone to it instead of creating a rival note.
+    const canMergeIntoNext = next && !next.isRest && next.partialChordNote
+      && next.duration === selectedDuration && next.dotted === selectedDotted;
+    if (canMergeIntoNext) {
+      next.keys.push({ key: tone.key, tieToNext: false, slurTo: null });
+      sortNoteKeys(next);
+    } else {
+      const newNote = {
+        id: makeNoteId(),
+        keys: [{ key: tone.key, tieToNext: false, slurTo: null }],
+        duration: selectedDuration,
+        dotted: selectedDotted,
+        isRest: false,
+        // If the selected note is a chord, this new note only concerns this
+        // one tone — `partialChordNote` marks it so it doesn't cut off any of
+        // the chord's *other* tones' ties in flight (see its use in
+        // playback.js); it briefly means this beat and the chord's other real
+        // continuation note overlap in the written rhythm, but that's
+        // preferable to silently dropping a tie.
+        partialChordNote: note.keys.length > 1,
+        selected: false,
+        dynamic: '',
+        hairpin: null,
+        articulation: '',
+        tupletId: null,
+        tupletCount: null,
+        ...noteAnnotationDefaults(),
+      };
+      // No matching pitch right after this note — insert one automatically
+      // (same pitch, current ribbon duration), tied, instead of requiring the
+      // user to type it themselves first. cascadeOverflow pushes it (and
+      // whatever it displaces) into the next measure if this one is already
+      // full, creating one at the end of the score if needed — same as how a
+      // real tied note would be written across the barline.
+      siblings.splice(noteIdx + 1, 0, newNote);
+      cascadeOverflow(selected.measureIndex, selected.part);
+    }
   }
   tone.tieToNext = true;
   pushHistory();
@@ -1678,6 +1812,19 @@ document.getElementById('btn-zoom-out').addEventListener('click', () => {
   render();
 });
 
+// ---------- 表示形式: 縦スクロール / 見開き(横スクロール) ----------
+// A display preference, not document content — not saved into the score file.
+
+const viewVerticalBtn = document.getElementById('btn-view-vertical');
+const viewSpreadBtn = document.getElementById('btn-view-spread');
+function setViewMode(mode) {
+  scoreContainer.classList.toggle('spread-view', mode === 'spread');
+  viewVerticalBtn.classList.toggle('active', mode === 'vertical');
+  viewSpreadBtn.classList.toggle('active', mode === 'spread');
+}
+viewVerticalBtn.addEventListener('click', () => setViewMode('vertical'));
+viewSpreadBtn.addEventListener('click', () => setViewMode('spread'));
+
 const bpmInput = document.getElementById('bpm-input');
 const bpmNoteSelect = document.getElementById('bpm-note-select');
 TEMPO_NOTE_VALUES.forEach((value) => {
@@ -1722,10 +1869,14 @@ function findNoteHitById(noteId) {
 // over every note sounding at each playback event's start, removed again at
 // its end — run on the same clock (PLAYBACK_LEAD) as the actual audio so the
 // two stay in sync.
-function schedulePlaybackHighlights() {
+function schedulePlaybackHighlights(startTime = 0) {
   const events = buildPlaybackEvents(score, effectiveQuarterBpm(score));
   events.forEach((ev) => {
     if (!ev.ids || ev.ids.length === 0) return;
+    const evEnd = ev.time + ev.duration;
+    if (evEnd <= startTime) return; // already finished before the start point
+    const offset = Math.max(0, ev.time - startTime);
+    const remaining = evEnd - Math.max(ev.time, startTime);
     const targets = ev.ids.map((id) => findNoteHitById(id)).filter(Boolean);
     if (targets.length === 0) return;
     const shownEls = [];
@@ -1753,30 +1904,57 @@ function schedulePlaybackHighlights() {
         const inView = box.top >= viewport.top && box.bottom <= viewport.bottom;
         if (!inView) shownEls[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
-    }, (ev.time + PLAYBACK_LEAD) * 1000);
+    }, (offset + PLAYBACK_LEAD) * 1000);
     const offTimer = setTimeout(() => {
       shownEls.forEach((el) => el.remove());
       highlightEls = highlightEls.filter((el) => !shownEls.includes(el));
-    }, (ev.time + ev.duration + PLAYBACK_LEAD) * 1000);
+    }, (offset + remaining + PLAYBACK_LEAD) * 1000);
     highlightTimers.push(onTimer, offTimer);
   });
 }
 
+// Where playback should begin: resume position if paused, else the
+// currently-selected note's earliest occurrence (見た目上は「選択中の音符から
+// 再生」), else the very start.
+function computePlaybackStartTime() {
+  if (player.pausedAt > 0) return player.pausedAt;
+  if (!selected) return 0;
+  const events = buildPlaybackEvents(score, effectiveQuarterBpm(score));
+  const matching = events.filter((ev) => ev.ids && ev.ids.includes(selected.noteId));
+  if (!matching.length) return 0;
+  return Math.min(...matching.map((ev) => ev.time));
+}
+
 const playBtn = document.getElementById('btn-play');
-playBtn.addEventListener('click', () => {
+const pauseBtn = document.getElementById('btn-pause');
+
+playBtn.addEventListener('click', async () => {
   if (player.playing) {
     player.stop();
     clearPlaybackHighlights();
     playBtn.classList.remove('active');
     return;
   }
+  const startTime = computePlaybackStartTime();
   playBtn.classList.add('active');
+  playBtn.disabled = true;
   clearPlaybackHighlights();
-  schedulePlaybackHighlights();
-  player.play(score, effectiveQuarterBpm(score), () => {
-    playBtn.classList.remove('active');
-    clearPlaybackHighlights();
-  });
+  schedulePlaybackHighlights(startTime);
+  try {
+    await player.play(score, effectiveQuarterBpm(score), score.instruments, () => {
+      playBtn.classList.remove('active');
+      clearPlaybackHighlights();
+    }, startTime);
+  } finally {
+    playBtn.disabled = false;
+  }
+});
+
+pauseBtn.addEventListener('click', () => {
+  if (!player.playing) return;
+  player.pause();
+  clearPlaybackHighlights();
+  playBtn.classList.remove('active');
 });
 
 document.getElementById('btn-print').addEventListener('click', () => {
@@ -1837,7 +2015,7 @@ document.getElementById('btn-export-midi').addEventListener('click', () => {
 
 document.getElementById('btn-export-wav').addEventListener('click', async () => {
   setStatus('音声を書き出し中...');
-  const buffer = await renderScoreToWavBuffer(score, effectiveQuarterBpm(score));
+  const buffer = await renderScoreToWavBuffer(score, effectiveQuarterBpm(score), score.instruments);
   download(`${score.title || 'score'}.wav`, [buffer], 'audio/wav');
   setStatus('書き出しました');
 });
@@ -1916,6 +2094,25 @@ PARTS.forEach((part) => {
   });
 });
 
+// --- 楽器(パートごとに選択可能、再生・WAV書き出しで使う) ---
+
+const SOUNDFONT_NAMES = getSoundfontNames();
+PARTS.forEach((part) => {
+  const select = document.getElementById(`instrument-${part}`);
+  if (!select) return;
+  SOUNDFONT_NAMES.forEach((name) => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    select.appendChild(opt);
+  });
+  select.value = score.instruments[part] || DEFAULT_INSTRUMENT;
+  select.addEventListener('change', () => {
+    score.instruments[part] = select.value;
+    pushHistory();
+  });
+});
+
 // --- 選択中の音符: タイ・スラー・強弱・アーティキュレーション・歌詞 ---
 
 function withSelectedNote(fn) {
@@ -1971,14 +2168,16 @@ document.getElementById('btn-decresc-end').addEventListener('click', () => {
   withSelectedNote((note) => { note.hairpin = note.hairpin === 'decresc-end' ? null : 'decresc-end'; });
 });
 document.getElementById('btn-lyric').addEventListener('click', () => {
-  const note = getSelectedNote();
-  if (!note) { setStatus('音符を選択してください'); return; }
-  showPromptModal('歌詞', note.lyric || '').then((value) => {
+  // 歌詞 is per-line (段落), not per-note — 対象小節 (same input the 小節
+  // タブ's マーカー/小節線 controls use) picks which line via whichever
+  // measure it belongs to.
+  const measure = targetMeasure();
+  if (!measure) return;
+  showPromptModal('歌詞（この小節が属する段落に表示されます）', measure.lyric || '').then((value) => {
     if (value === null) return;
-    note.lyric = value;
+    measure.lyric = value;
     pushHistory();
     render();
-    syncNoteControlsFromSelection();
   });
 });
 
@@ -2175,11 +2374,93 @@ function doRangePaste(targetStartOverride) {
   setStatus('ペーストしました');
 }
 
-function showRangeContextMenu(clientX, clientY) {
-  showContextMenu(clientX, clientY, [
+function showRangeContextMenu(clientX, clientY, region, localX) {
+  const items = [
     { label: 'コピー', onClick: doRangeCopy },
     { label: 'ペースト', onClick: () => doRangePaste(rangeSelection ? rangeSelection.measureStart : undefined) },
     { label: '音符の削除', onClick: doRangeDelete },
+  ];
+  // A note-level clipboard (see copySelectedNotes) pastes at the exact mouse
+  // position within this measure, distinct from the measure-range paste
+  // above (which always pastes whole measures starting at 対象小節).
+  if (noteClipboard && noteClipboard.length && region) {
+    items.push({ separator: true });
+    items.push({
+      label: `音符をペースト(${noteClipboard.length}個、クリック位置に挿入)`,
+      onClick: () => pasteNotesAtPosition(region, localX),
+    });
+  }
+  showContextMenu(clientX, clientY, items);
+}
+
+// ---------- 音符単位の範囲選択: 右クリック→コピー/削除、空白右クリック→ペースト ----------
+//
+// Distinct from the measure-range system above (which operates on whole
+// measures via rangeSelection/clipboard) — this one operates on the specific
+// selected note(s) (see noteRangeSelection), chord-as-one-unit, and pastes at
+// the exact position the user right-clicks rather than at 対象小節.
+
+// Whichever note-level selection is currently active: the horizontal-drag
+// range if it has grown to 2+ notes, otherwise just the single `selected`
+// note (so right-clicking a lone selected note still offers copy/delete).
+function getActiveNoteSelectionRefs() {
+  if (noteRangeSelection && noteRangeSelection.length >= 2) return noteRangeSelection;
+  if (selected) return [{ measureIndex: selected.measureIndex, part: selected.part, noteId: selected.noteId }];
+  return [];
+}
+
+function copySelectedNotes() {
+  const refs = getActiveNoteSelectionRefs();
+  if (!refs.length) return;
+  noteClipboard = refs
+    .map((r) => score.measures[r.measureIndex][r.part].find((n) => n.id === r.noteId))
+    .filter(Boolean)
+    .map((n) => structuredClone(n));
+  setStatus(`${noteClipboard.length}個の音符をコピーしました`);
+}
+
+function deleteSelectedNoteRange() {
+  const refs = getActiveNoteSelectionRefs();
+  if (!refs.length) return;
+  refs.forEach((r) => {
+    const measure = score.measures[r.measureIndex];
+    clearSlursTargeting(r.noteId);
+    measure[r.part] = measure[r.part].filter((n) => n.id !== r.noteId);
+  });
+  noteRangeSelection = null;
+  selected = null;
+  pushHistory();
+  render();
+  syncNoteControlsFromSelection();
+  setStatus('選択した音符を削除しました');
+}
+
+// Inserts a deep copy of noteClipboard's notes into `region`'s measure/part
+// at whichever index localX lands closest to (same left-to-right insertion
+// logic as insertNote), cascading overflow into later measures if needed.
+function pasteNotesAtPosition(region, localX) {
+  if (!noteClipboard || !noteClipboard.length) { setStatus('コピーした音符がありません'); return; }
+  const measure = score.measures[region.measureIndex];
+  const insertIndex = findInsertIndex(region, localX);
+  const clones = noteClipboard.map((n) => ({ ...structuredClone(n), id: makeNoteId() }));
+  measure[region.part].splice(insertIndex, 0, ...clones);
+  cascadeOverflow(region.measureIndex, region.part);
+  pushHistory();
+  render();
+  setStatus(`${clones.length}個の音符をペーストしました`);
+}
+
+function showNoteRangeContextMenu(clientX, clientY) {
+  const refs = getActiveNoteSelectionRefs();
+  showContextMenu(clientX, clientY, [
+    { header: `${refs.length}個の音符を選択中` },
+    { label: 'コピー', onClick: copySelectedNotes },
+    { label: '削除', onClick: deleteSelectedNoteRange },
+    { separator: true },
+    {
+      label: '選択解除',
+      onClick: () => { noteRangeSelection = null; selected = null; render(); },
+    },
   ]);
 }
 

@@ -180,6 +180,10 @@ export function createEmptyMeasure() {
     // simultaneous notes (a different part, or another tone of the same
     // chord) edits the same mark instead of stacking duplicates.
     marks: [],
+    // 歌詞 — one line of text per system (段落), not per note. Shown for
+    // whichever line this measure currently belongs to (see staffRenderer's
+    // per-line lyric row) — set via targetMeasure()'s "対象小節" input.
+    lyric: '',
   };
 }
 
@@ -221,6 +225,9 @@ export function createEmptyScore() {
     measureWidthScale: 1,
     pickupBeats: 0,
     clefs: { ...PART_CLEF },
+    // Playback/WAV-export instrument per part (上鍵盤/下鍵盤/ペダル) — a
+    // General MIDI soundfont name (see smplr's getSoundfontNames()).
+    instruments: { upper: 'acoustic_grand_piano', lower: 'acoustic_grand_piano', pedal: 'acoustic_bass' },
     measures: Array.from({ length: DEFAULT_PAGE_MEASURE_COUNT }, () => createEmptyMeasure()),
   };
 }

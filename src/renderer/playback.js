@@ -1,8 +1,14 @@
+import { Soundfont } from '../../node_modules/smplr/dist/index.mjs';
 import {
   PARTS, measureCapacity, noteBeats, keySignatureAccidentalForLetter,
 } from './scoreModel.js';
 import { buildPlayOrder } from './playOrder.js';
 import { parseKey, buildKey } from './pitchMap.js';
+
+// Used whenever a part has no instrument choice saved yet (older files, or a
+// freshly created score before the user picks anything in 出力/ホーム's
+// 楽器 selects).
+export const DEFAULT_INSTRUMENT = 'acoustic_grand_piano';
 
 const LETTER_SEMITONE = {
   C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11,
@@ -20,11 +26,6 @@ export const PLAYBACK_LEAD = 0.15;
 export function pitchToMidi(key) {
   const { letter, accidental, octave } = parseKey(key);
   return (octave + 1) * 12 + LETTER_SEMITONE[letter] + ACCIDENTAL_OFFSET[accidental];
-}
-
-export function pitchToFrequency(key) {
-  const midi = pitchToMidi(key);
-  return 440 * 2 ** ((midi - 69) / 12);
 }
 
 // A note typed without an explicit accidental sounds whatever is currently
@@ -123,77 +124,127 @@ export function buildPlaybackEvents(score, bpm = 100) {
   return events;
 }
 
-function scheduleVoice(ctx, destination, ev) {
-  ev.keys.forEach((key) => {
-    const freq = pitchToFrequency(key);
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = ev.part === 'pedal' ? 'sine' : 'triangle';
-    osc.frequency.value = freq;
-    const peak = 0.25;
-    const t0 = ev.time;
-    const attackEnd = t0 + 0.015;
-    const releaseLen = 0.03;
-    const noteEnd = t0 + Math.max(ev.duration, 0.05);
-    // Sustain at full volume for the note's whole length and only fade in
-    // the final releaseLen — ramping straight from attack down to the note's
-    // end (as a single linearRampToValueAtTime spanning the whole duration
-    // used to do) made long notes audibly fade out well before they were
-    // supposed to end, sounding like the volume randomly dipped mid-piece.
-    const releaseStart = Math.max(attackEnd, noteEnd - releaseLen);
-    gain.gain.setValueAtTime(0, t0);
-    gain.gain.linearRampToValueAtTime(peak, attackEnd);
-    gain.gain.setValueAtTime(peak, releaseStart);
-    gain.gain.linearRampToValueAtTime(0.0001, noteEnd);
-    osc.connect(gain).connect(destination);
-    osc.start(t0);
-    osc.stop(noteEnd + 0.02);
-  });
-}
-
+// Plays and pauses a score using real sampled instruments (smplr) — one
+// instrument per part (上鍵盤/下鍵盤/ペダル), each independently selectable
+// (see app.js's 楽器 selects, stored as score.instruments).
+//
+// Notes are scheduled with plain setTimeout rather than the Web Audio clock's
+// own native `time` parameter (which smplr also supports) so that pause()
+// can reliably cancel every not-yet-started note by just clearing timers —
+// relying on the instrument's own stop() to do that isn't documented to
+// affect future-scheduled starts, only currently-sounding ones.
 export class Player {
   constructor() {
     this.ctx = null;
     this.timers = [];
     this.playing = false;
+    this.instruments = { upper: null, lower: null, pedal: null };
+    this.instrumentNames = { upper: null, lower: null, pedal: null };
+    this.pausedAt = 0; // score-time (seconds) to resume from
+    this.playStartScoreTime = 0;
+    this.playStartRealMs = 0;
   }
 
-  play(score, bpm, onDone) {
-    this.stop();
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  async ensureInstruments(instrumentNames) {
+    if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (this.ctx.state === 'suspended') await this.ctx.resume();
+    await Promise.all(PARTS.map(async (part) => {
+      const name = (instrumentNames && instrumentNames[part]) || DEFAULT_INSTRUMENT;
+      // Even when the name matches and an instance already exists, its
+      // `ready` still needs awaiting here — a second play() while the first
+      // is still mid-load must not skip ahead of that load finishing.
+      if (this.instrumentNames[part] === name && this.instruments[part]) {
+        await this.instruments[part].ready;
+        return;
+      }
+      if (this.instruments[part]) this.instruments[part].dispose();
+      const instrument = Soundfont(this.ctx, { instrument: name });
+      this.instruments[part] = instrument;
+      this.instrumentNames[part] = name;
+      await instrument.ready;
+    }));
+  }
+
+  // `startTime` (seconds into the piece) lets playback begin partway through
+  // — see app.js's "選択中の音符から再生" behavior.
+  async play(score, bpm, instrumentNames, onDone, startTime = 0) {
+    this.clearTimers();
+    await this.ensureInstruments(instrumentNames);
     const events = buildPlaybackEvents(score, bpm);
-    let maxEnd = 0;
+    let maxOffset = 0;
+    this.playStartScoreTime = startTime;
+    this.playStartRealMs = performance.now();
     events.forEach((ev) => {
-      scheduleVoice(this.ctx, this.ctx.destination, { ...ev, time: ev.time + PLAYBACK_LEAD });
-      maxEnd = Math.max(maxEnd, ev.time + ev.duration);
+      const evEnd = ev.time + ev.duration;
+      if (evEnd <= startTime) return; // already finished before the start point
+      const offset = Math.max(0, ev.time - startTime);
+      // A note already sounding when playback starts mid-piece plays out
+      // only its remaining duration, not its full written length.
+      const duration = Math.max(0.05, evEnd - Math.max(ev.time, startTime));
+      const instrument = this.instruments[ev.part];
+      const timer = setTimeout(() => {
+        ev.keys.forEach((key) => {
+          instrument.start({ note: pitchToMidi(key), duration, velocity: 100 });
+        });
+      }, (offset + PLAYBACK_LEAD) * 1000);
+      this.timers.push(timer);
+      maxOffset = Math.max(maxOffset, offset + duration);
     });
     this.playing = true;
+    this.pausedAt = 0;
     const doneTimer = setTimeout(() => {
       this.playing = false;
       if (onDone) onDone();
-    }, (maxEnd + PLAYBACK_LEAD + 0.3) * 1000);
+    }, (maxOffset + PLAYBACK_LEAD + 0.3) * 1000);
     this.timers.push(doneTimer);
   }
 
-  stop() {
+  clearTimers() {
     this.timers.forEach(clearTimeout);
     this.timers = [];
-    if (this.ctx) {
-      this.ctx.close();
-      this.ctx = null;
-    }
+  }
+
+  // Stops all sound and remembers the score-time position so a later play()
+  // call (with that position as startTime) resumes instead of restarting.
+  pause() {
+    if (!this.playing) return;
+    const elapsedReal = Math.max(0, (performance.now() - this.playStartRealMs) / 1000 - PLAYBACK_LEAD);
+    this.pausedAt = this.playStartScoreTime + elapsedReal;
+    this.clearTimers();
+    PARTS.forEach((part) => { if (this.instruments[part]) this.instruments[part].stop(); });
     this.playing = false;
+  }
+
+  stop() {
+    this.clearTimers();
+    PARTS.forEach((part) => { if (this.instruments[part]) this.instruments[part].stop(); });
+    this.playing = false;
+    this.pausedAt = 0;
   }
 }
 
-// Renders the score offline to a mono 16-bit PCM WAV file (ArrayBuffer).
-export async function renderScoreToWavBuffer(score, bpm = 100) {
+// Renders the score offline to a mono 16-bit PCM WAV file (ArrayBuffer),
+// using the same per-part instrument choices as live playback.
+export async function renderScoreToWavBuffer(score, bpm = 100, instrumentNames = {}) {
   const events = buildPlaybackEvents(score, bpm);
   const totalTime = events.reduce((max, ev) => Math.max(max, ev.time + ev.duration), 0) + 1;
   const sampleRate = 44100;
   const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   const offlineCtx = new OfflineCtx(1, Math.ceil(totalTime * sampleRate), sampleRate);
-  events.forEach((ev) => scheduleVoice(offlineCtx, offlineCtx.destination, ev));
+  const instruments = {};
+  await Promise.all(PARTS.map(async (part) => {
+    const name = instrumentNames[part] || DEFAULT_INSTRUMENT;
+    const instrument = Soundfont(offlineCtx, { instrument: name });
+    instruments[part] = instrument;
+    await instrument.ready;
+  }));
+  events.forEach((ev) => {
+    ev.keys.forEach((key) => {
+      instruments[ev.part].start({
+        note: pitchToMidi(key), time: ev.time, duration: Math.max(ev.duration, 0.05), velocity: 100,
+      });
+    });
+  });
   const rendered = await offlineCtx.startRendering();
   return audioBufferToWav(rendered);
 }

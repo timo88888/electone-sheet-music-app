@@ -17,7 +17,8 @@
     <span id="measure-count" class="qb-measure-count"></span>
     <span class="qb-sep"></span>
     <label class="qb-bpm">テンポ <select id="bpm-note-select" class="bpm-note-select"></select> = <input id="bpm-input" type="number" min="20" max="300" class="bpm-input" /></label>
-    <button id="btn-play" title="再生/停止" class="icon-btn"><svg viewBox="0 0 24 24" width="16" height="16"><polygon points="5,3 21,12 5,21" fill="currentColor"/></svg></button>
+    <button id="btn-play" title="再生/停止(音符を選択中ならそこから再生)" class="icon-btn"><svg viewBox="0 0 24 24" width="16" height="16"><polygon points="5,3 21,12 5,21" fill="currentColor"/></svg></button>
+    <button id="btn-pause" title="一時停止" class="icon-btn"><svg viewBox="0 0 24 24" width="16" height="16"><rect x="5" y="3" width="5" height="18" fill="currentColor"/><rect x="14" y="3" width="5" height="18" fill="currentColor"/></svg></button>
     <span class="qb-sep"></span>
     <button id="btn-zoom-out" title="縮小" class="icon-btn">－</button>
     <button id="btn-zoom-in" title="拡大" class="icon-btn">＋</button>
@@ -146,6 +147,12 @@
         <button id="btn-apply-marker">適用</button>
       </div>
     </div>
+    <div class="ribbon-group">
+      <span class="group-label">歌詞(対象小節が属する段落に表示)</span>
+      <div class="group-row">
+        <button id="btn-lyric">編集</button>
+      </div>
+    </div>
   </div>
 
   <!-- ==================== MARKS (per-note) ==================== -->
@@ -178,12 +185,6 @@
           <option value="accent">アクセント</option>
           <option value="marcato">マルカート</option>
         </select>
-      </div>
-    </div>
-    <div class="ribbon-group">
-      <span class="group-label">歌詞</span>
-      <div class="group-row">
-        <button id="btn-lyric">編集</button>
       </div>
     </div>
     <div class="ribbon-group">
@@ -240,6 +241,13 @@
       </div>
       <span class="hint-text">広げるほど1段あたりの小節数が減り、狭めるほど増えます。各小節の幅は音符の数に応じて自動調整されます。</span>
     </div>
+    <div class="ribbon-group">
+      <span class="group-label">表示形式</span>
+      <div class="group-row">
+        <button id="btn-view-vertical" class="active">縦スクロール</button>
+        <button id="btn-view-spread">見開き(横スクロール)</button>
+      </div>
+    </div>
   </div>
 
   <!-- ==================== OUTPUT ==================== -->
@@ -258,6 +266,14 @@
         <button id="btn-print">PDF書き出し/印刷</button>
         <button id="btn-export-midi">MIDI書き出し</button>
         <button id="btn-export-wav">WAV書き出し</button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">楽器(再生・WAV書き出し)</span>
+      <div class="group-row">
+        <label>上鍵盤 <select id="instrument-upper"></select></label>
+        <label>下鍵盤 <select id="instrument-lower"></select></label>
+        <label>ペダル <select id="instrument-pedal"></select></label>
       </div>
     </div>
     <div class="ribbon-group">

@@ -77,3 +77,30 @@ export function transposeKey(key, steps) {
   }
   return buildKey(cur.letter, accidental, cur.octave);
 }
+
+const LETTER_SEMITONE = {
+  C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11,
+};
+const ACCIDENTAL_SEMITONE_OFFSET = {
+  '': 0, '#': 1, '##': 2, b: -1, bb: -2, n: 0,
+};
+// Respells every chromatic step with a sharp (or a natural white key) —
+// simple and predictable, same convention most notation software uses for a
+// manual semitone nudge rather than trying to infer flat-vs-sharp intent
+// from a key signature this model doesn't track.
+const SEMITONE_TO_LETTER = ['C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B'];
+const SEMITONE_TO_ACCIDENTAL = ['', '#', '', '#', '', '', '#', '', '#', '', '#', ''];
+
+// Shifts a key by `n` chromatic semitones (the ↑/↓ arrow-key pitch nudge —
+// see app.js's keydown handler). Unlike transposeKey (diatonic, keeps
+// whatever accidental was already there), this always recomputes both the
+// letter and the accidental, since a semitone step frequently changes which
+// one is correct (e.g. c/4 up a semitone is c#/4, not d bb /4).
+export function shiftSemitone(key, n) {
+  const { letter, accidental, octave } = parseKey(key);
+  const absSemitone = (octave + 1) * 12 + LETTER_SEMITONE[letter]
+    + (ACCIDENTAL_SEMITONE_OFFSET[accidental] || 0) + Math.round(n);
+  const newOctave = Math.floor(absSemitone / 12) - 1;
+  const pc = ((absSemitone % 12) + 12) % 12;
+  return buildKey(SEMITONE_TO_LETTER[pc], SEMITONE_TO_ACCIDENTAL[pc], newOctave);
+}

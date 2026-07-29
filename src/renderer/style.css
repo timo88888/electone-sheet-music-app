@@ -35,21 +35,21 @@ button, input, select {
 .quickbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  gap: 6px;
+  padding: 3px 10px;
   background: #1e2430;
   color: #fff;
   flex-shrink: 0;
 }
 
-.qb-title { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #ddd; }
-.qb-title input { width: 14em; }
-.qb-measure-count { font-size: 12px; color: #bbb; white-space: nowrap; }
-.qb-bpm { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #ddd; }
+.qb-title { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #ddd; }
+.qb-title input { width: 12em; }
+.qb-measure-count { font-size: 11px; color: #bbb; white-space: nowrap; }
+.qb-bpm { display: flex; align-items: center; gap: 3px; font-size: 11px; color: #ddd; }
 /* Wide enough (plus right padding) that a 3-digit value like "300" never
    sits behind the number input's up/down spinner buttons. */
-.bpm-input { width: 4.6em; padding-right: 4px; }
-.qb-sep { width: 1px; height: 20px; background: #444; }
+.bpm-input { width: 4.2em; padding-right: 3px; }
+.qb-sep { width: 1px; height: 16px; background: #444; }
 
 /* ---------- ribbon tabs ---------- */
 
@@ -62,13 +62,13 @@ button, input, select {
 }
 
 .ribbon-tab {
-  padding: 7px 18px;
+  padding: 4px 14px;
   border: none;
   background: transparent;
   color: #bbb;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
-  border-radius: 6px 6px 0 0;
+  border-radius: 5px 5px 0 0;
 }
 .ribbon-tab:hover { background: #3a4152; color: #fff; }
 .ribbon-tab.active { background: #444b5a; color: #fff; font-weight: bold; }
@@ -81,7 +81,7 @@ button, input, select {
   align-items: flex-start;
   gap: 0;
   background: #444b5a;
-  padding: 8px 12px;
+  padding: 4px 10px;
   border-bottom: 2px solid #2f3542;
   flex-shrink: 0;
 }
@@ -90,17 +90,17 @@ button, input, select {
 .ribbon-group {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 0 14px;
+  gap: 3px;
+  padding: 0 10px;
   border-right: 1px solid #5a6272;
-  min-height: 52px;
+  min-height: 36px;
   justify-content: center;
 }
 .ribbon-group:last-child { border-right: none; }
 
-.group-label { font-size: 10px; color: #cfd3db; white-space: nowrap; }
-.group-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.hint-text { font-size: 10px; color: #9aa0aa; }
+.group-label { font-size: 9px; color: #cfd3db; white-space: nowrap; }
+.group-row { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.hint-text { font-size: 9px; color: #9aa0aa; }
 
 .range-label {
   font-size: 11px;
@@ -112,8 +112,8 @@ button, input, select {
 /* ---------- shared control styling ---------- */
 
 button {
-  font-size: 13px;
-  padding: 5px 8px;
+  font-size: 12px;
+  padding: 3px 6px;
   border: 1px solid #5a6272;
   background: #565f70;
   color: #fff;
@@ -124,8 +124,8 @@ button:hover { background: #667082; }
 button.active { background: #1a73e8; border-color: #1a73e8; }
 
 input[type="text"], input[type="number"] {
-  font-size: 13px;
-  padding: 5px 8px;
+  font-size: 12px;
+  padding: 3px 6px;
   border: 1px solid #5a6272;
   background: #565f70;
   color: #fff;
@@ -134,27 +134,27 @@ input[type="text"], input[type="number"] {
 }
 
 select {
-  font-size: 13px;
-  padding: 5px 6px;
+  font-size: 12px;
+  padding: 3px 5px;
   border: 1px solid #5a6272;
   background: #565f70;
   color: #fff;
   border-radius: 4px;
 }
 
-label { font-size: 12px; color: #eee; display: flex; align-items: center; gap: 4px; }
+label { font-size: 11px; color: #eee; display: flex; align-items: center; gap: 3px; }
 
 .icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 3px;
-  min-width: 30px;
+  min-width: 26px;
   line-height: 1;
-  font-size: 15px;
+  font-size: 13px;
 }
 .icon-btn svg { display: block; flex-shrink: 0; }
-.icon-btn .btn-text { font-size: 10px; }
+.icon-btn .btn-text { font-size: 9px; }
 
 .status {
   font-size: 12px;
@@ -178,6 +178,15 @@ label { font-size: 12px; color: #eee; display: flex; align-items: center; gap: 4
   flex-direction: column;
   gap: 24px;
   width: fit-content;
+}
+
+/* 見開き表示（電子書籍のように2ページ横並び、左右にスクロール） — トグルは
+   形式タブの「表示」から。ページ自体のレイアウトはvertical-scrollモードと
+   共通で、ここでは並べ方だけを変える。折り返さず1行に並べ、.score-scroll
+   側の横スクロールで次の見開きへ進む。 */
+.score-container.spread-view {
+  flex-direction: row;
+  flex-wrap: nowrap;
 }
 
 .score-page {
