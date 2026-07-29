@@ -1,5 +1,5 @@
 const {
-  app, BrowserWindow, dialog, ipcMain,
+  app, BrowserWindow, dialog, ipcMain, Menu,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -62,6 +62,15 @@ function setUpAutoUpdater() {
 }
 
 app.whenReady().then(() => {
+  // Without this, Electron's default application menu registers native
+  // accelerators for Ctrl+Z/Shift+Ctrl+Z/Ctrl+X/C/V bound to
+  // webContents.undo()/redo()/cut()/copy()/paste() — those intercept the
+  // keystroke at the menu level before it ever reaches the renderer's own
+  // keydown handling (see app.js's copy/cut/paste/undo/redo shortcuts),
+  // which is why they only seemed to work while focus was inside a
+  // contentEditable text box (the one case where Electron's built-in
+  // action actually does something) and not for score-level selections.
+  Menu.setApplicationMenu(null);
   createWindow();
   if (app.isPackaged) setUpAutoUpdater();
 

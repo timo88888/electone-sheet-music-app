@@ -1,6 +1,6 @@
 import {
   PARTS, CLEF_OPTIONS, CLEF_LABELS, KEY_SIGNATURES, CHORD_ROOTS, CHORD_QUALITY_OPTIONS,
-  TEMPO_NOTE_VALUES, TEMPO_NOTE_GLYPHS, DURATION_LABELS, effectiveQuarterBpm,
+  TEMPO_NOTE_VALUES, DURATION_LABELS, effectiveQuarterBpm,
   detectChordCandidates, chordPitchClassesForLowerNote,
   REHEARSAL_OPTIONS, REGISTRATION_OPTIONS,
   createEmptyScore, createEmptyMeasure, makeNoteId, noteAnnotationDefaults,
@@ -16,6 +16,19 @@ import {
 } from './playback.js';
 import { buildMidiFile } from './midiExport.js';
 import { getSoundfontNames } from '../../node_modules/smplr/dist/index.mjs';
+
+// Tempo marking note icon, drawn as inline SVG (see renderTitleHeader) —
+// same paths as the 音符 ribbon's duration-select icons, reused here so the
+// glyph always renders correctly regardless of which fonts happen to be
+// installed (the Unicode musical-symbols codepoints this used to use are
+// outside most system fonts' coverage).
+const TEMPO_NOTE_ICON_SVG = {
+  w: '<svg viewBox="0 0 24 24" width="16" height="16"><ellipse cx="12" cy="13" rx="6.5" ry="4.3" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+  h: '<svg viewBox="0 0 24 24" width="16" height="16"><ellipse cx="9" cy="17" rx="4.6" ry="3.3" fill="none" stroke="currentColor" stroke-width="2"/><line x1="13.4" y1="17" x2="13.4" y2="3" stroke="currentColor" stroke-width="2"/></svg>',
+  q: '<svg viewBox="0 0 24 24" width="16" height="16"><ellipse cx="9" cy="17" rx="4.6" ry="3.3" fill="currentColor"/><line x1="13.4" y1="17" x2="13.4" y2="3" stroke="currentColor" stroke-width="2"/></svg>',
+  8: '<svg viewBox="0 0 24 24" width="16" height="16"><ellipse cx="9" cy="17" rx="4.6" ry="3.3" fill="currentColor"/><line x1="13.4" y1="17" x2="13.4" y2="3" stroke="currentColor" stroke-width="2"/><path d="M13.4,3 C19,6 19,10 13.6,11.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  16: '<svg viewBox="0 0 24 24" width="16" height="16"><ellipse cx="9" cy="17" rx="4.6" ry="3.3" fill="currentColor"/><line x1="13.4" y1="17" x2="13.4" y2="3" stroke="currentColor" stroke-width="2"/><path d="M13.4,3 C19,5.5 19,8.5 13.6,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M13.4,7.5 C19,10 19,13 13.6,14.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+};
 
 // Upgrades a score loaded from an older save file.
 // - `note.keys` used to be an array of plain VexFlow key strings with
@@ -109,6 +122,7 @@ function migrateScore(loaded) {
   if (!loaded.bpm) loaded.bpm = 100;
   if (!loaded.bpmNoteValue) loaded.bpmNoteValue = 'q';
   if (!loaded.timeSigDisplay) loaded.timeSigDisplay = 'numeric';
+  if (loaded.showChordSymbols === undefined) loaded.showChordSymbols = true;
   if (!loaded.measureWidthScale) loaded.measureWidthScale = 1;
   if (!loaded.instruments) loaded.instruments = {};
   PARTS.forEach((part) => {
@@ -388,6 +402,7 @@ function syncControlsFromScore() {
   document.getElementById('keysig-select').value = score.keySignature || 'C';
   bpmInput.value = score.bpm || 100;
   bpmNoteSelect.value = score.bpmNoteValue || 'q';
+  document.getElementById('chk-show-chords').checked = score.showChordSymbols !== false;
   updateWidthSliderUI();
   PARTS.forEach((part) => {
     const select = document.getElementById(`clef-${part}`);
@@ -849,7 +864,12 @@ function renderTitleHeader(pages) {
   tempoMarking.className = 'score-tempo-marking';
   const tempoGlyph = document.createElement('span');
   tempoGlyph.className = 'score-tempo-glyph';
-  tempoGlyph.textContent = TEMPO_NOTE_GLYPHS[score.bpmNoteValue] || TEMPO_NOTE_GLYPHS.q;
+  // Drawn as inline SVG (same paths as the 音符 ribbon's duration icons)
+  // rather than the Unicode musical-symbols glyphs (𝅝 U+1D15D etc.) those
+  // used to rely on — several of those codepoints live outside what most
+  // system fonts actually cover (only ♩/♪ are in the common BMP block),
+  // so w/h/16 rendered as tofu/mojibake on machines without a music font.
+  tempoGlyph.innerHTML = TEMPO_NOTE_ICON_SVG[score.bpmNoteValue] || TEMPO_NOTE_ICON_SVG.q;
   tempoMarking.appendChild(tempoGlyph);
   tempoMarking.appendChild(document.createTextNode(` = ${score.bpm}`));
   tempoMarking.style.left = `${LAYOUT.pageMargin}px`;
@@ -1154,7 +1174,7 @@ function renderShapes(pages) {
     wrapper.style.width = `${shape.width}px`;
     wrapper.style.height = `${shape.height}px`;
 
-    if (shape.type === 'rect') {
+    if (shape.type === 'rect' || shape.type === 'textbox') {
       wrapper.style.background = shape.fill;
       wrapper.style.border = `${shape.strokeWidth}px solid ${shape.stroke}`;
     } else if (shape.type === 'ellipse') {
@@ -1207,7 +1227,6 @@ function renderShapes(pages) {
     textEl.textContent = shape.text || '';
     textEl.style.fontFamily = shape.fontFamily;
     textEl.style.fontSize = `${shape.fontSize}px`;
-    textEl.addEventListener('mousedown', (ev) => ev.stopPropagation());
     textEl.addEventListener('blur', () => {
       if (shape.text !== textEl.textContent) { shape.text = textEl.textContent; pushHistory(); }
     });
@@ -1226,9 +1245,20 @@ function renderShapes(pages) {
       });
     }
 
+    // A single click on an unselected shape selects it (and arms a move-drag
+    // — harmless if the mouse never actually moves before release). Once
+    // it's already selected, clicking directly on its own text instead lets
+    // the click through to native contentEditable caret placement — without
+    // this, the text layer sitting on top would swallow the click before
+    // selectShape ever ran (see the old per-textEl stopPropagation this
+    // replaced), which is why plain textboxes in particular were nearly
+    // impossible to select: their text overlay covers the entire shape.
     wrapper.addEventListener('mousedown', (ev) => {
       if (pendingShapeType) return;
+      const clickedText = ev.target.closest('.shape-text');
+      const alreadySelected = shape.id === selectedShapeId;
       ev.stopPropagation();
+      if (clickedText && alreadySelected) return;
       ev.preventDefault();
       selectShape(shape.id);
       startShapeMove(shape, ev);
@@ -2380,14 +2410,38 @@ document.getElementById('btn-remove-measure').addEventListener('click', () => {
   showConfirmModal('最後の小節には音符があります。削除しますか?').then((ok) => { if (ok) doRemove(); });
 });
 
-document.getElementById('btn-zoom-in').addEventListener('click', () => {
-  zoom = Math.min(2, zoom + 0.1);
+const zoomPercentEl = document.getElementById('zoom-percent');
+function setZoom(newZoom) {
+  zoom = Math.max(0.5, Math.min(2, newZoom));
   render();
-});
-document.getElementById('btn-zoom-out').addEventListener('click', () => {
-  zoom = Math.max(0.5, zoom - 0.1);
-  render();
-});
+  zoomPercentEl.textContent = `${Math.round(zoom * 100)}%`;
+}
+
+// Press-and-hold repeats the step (after a short initial delay) until
+// release — a single quick click still applies exactly one step, since the
+// first step happens immediately on mousedown rather than waiting for the
+// repeat timer.
+function setUpZoomButton(btn, step) {
+  let delayTimer = null;
+  let repeatTimer = null;
+  const stop = () => {
+    clearTimeout(delayTimer);
+    clearInterval(repeatTimer);
+    delayTimer = null;
+    repeatTimer = null;
+  };
+  btn.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    setZoom(zoom + step);
+    delayTimer = setTimeout(() => {
+      repeatTimer = setInterval(() => setZoom(zoom + step), 100);
+    }, 400);
+  });
+  btn.addEventListener('mouseleave', stop);
+  document.addEventListener('mouseup', stop);
+}
+setUpZoomButton(document.getElementById('btn-zoom-in'), 0.1);
+setUpZoomButton(document.getElementById('btn-zoom-out'), -0.1);
 
 // ---------- 表示形式: 縦スクロール / 見開き(横スクロール) ----------
 // A display preference, not document content — not saved into the score file.
@@ -2402,12 +2456,22 @@ function setViewMode(mode) {
 viewVerticalBtn.addEventListener('click', () => setViewMode('vertical'));
 viewSpreadBtn.addEventListener('click', () => setViewMode('spread'));
 
+document.getElementById('chk-show-chords').addEventListener('change', (e) => {
+  score.showChordSymbols = e.target.checked;
+  pushHistory();
+  render();
+});
+
 const bpmInput = document.getElementById('bpm-input');
 const bpmNoteSelect = document.getElementById('bpm-note-select');
 TEMPO_NOTE_VALUES.forEach((value) => {
   const opt = document.createElement('option');
   opt.value = value;
-  opt.textContent = `${TEMPO_NOTE_GLYPHS[value]}(${DURATION_LABELS[value]})`;
+  // A <select><option> can't hold the SVG icon the on-page tempo marking
+  // uses (see TEMPO_NOTE_ICON_SVG) — the Japanese label alone is unambiguous
+  // and avoids the tofu/mojibake risk the old Unicode musical-symbols glyph
+  // had here for note values outside the common BMP block (w/h/16).
+  opt.textContent = DURATION_LABELS[value];
   bpmNoteSelect.appendChild(opt);
 });
 bpmInput.value = score.bpm;

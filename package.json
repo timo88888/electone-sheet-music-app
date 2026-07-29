@@ -1,12 +1,12 @@
 {
   "name": "electone-sheet-music-app",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "エレクトーン楽譜生成アプリ",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win",
-    "publish": "electron-builder --win --publish always"
+    "publish": "git tag \"v$npm_package_version\" 2>/dev/null; git push origin \"v$npm_package_version\" 2>/dev/null; electron-builder --win --publish always"
   },
   "author": "",
   "license": "UNLICENSED",

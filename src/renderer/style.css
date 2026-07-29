@@ -53,6 +53,7 @@ button, input, select {
    generously rather than to this environment's own measured minimum. */
 .bpm-input { width: 5.2em; padding-right: 16px; }
 .qb-sep { width: 1px; height: 16px; background: #444; }
+.qb-zoom-percent { font-size: 11px; color: #bbb; min-width: 3.2em; text-align: center; white-space: nowrap; }
 
 /* ---------- ribbon tabs ---------- */
 
@@ -308,14 +309,17 @@ input.score-header-field:hover, input.score-header-field:focus {
    the quickbar's note-value select + BPM number. */
 .score-tempo-marking {
   position: absolute;
+  display: inline-flex;
+  align-items: center;
   font-size: 14px;
   color: #222;
   font-family: "Hiragino Sans", "Yu Gothic", serif;
   white-space: nowrap;
 }
 .score-tempo-glyph {
-  font-family: "Bravura Text", "Noto Music", "Segoe UI Symbol", "Hiragino Sans", sans-serif;
-  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  color: #222;
   margin-right: 2px;
 }
 

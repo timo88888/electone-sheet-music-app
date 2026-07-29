@@ -20,8 +20,9 @@
     <button id="btn-play" title="再生/停止(音符を選択中ならそこから再生)" class="icon-btn"><svg viewBox="0 0 24 24" width="16" height="16"><polygon points="5,3 21,12 5,21" fill="currentColor"/></svg></button>
     <button id="btn-pause" title="一時停止" class="icon-btn"><svg viewBox="0 0 24 24" width="16" height="16"><rect x="5" y="3" width="5" height="18" fill="currentColor"/><rect x="14" y="3" width="5" height="18" fill="currentColor"/></svg></button>
     <span class="qb-sep"></span>
-    <button id="btn-zoom-out" title="縮小" class="icon-btn">－</button>
-    <button id="btn-zoom-in" title="拡大" class="icon-btn">＋</button>
+    <button id="btn-zoom-out" title="縮小(長押しで連続)" class="icon-btn">－</button>
+    <span id="zoom-percent" class="qb-zoom-percent">100%</span>
+    <button id="btn-zoom-in" title="拡大(長押しで連続)" class="icon-btn">＋</button>
     <span id="status" class="status"></span>
   </div>
 
@@ -31,9 +32,9 @@
     <button class="ribbon-tab" data-tab="measure">小節</button>
     <button class="ribbon-tab" data-tab="marks">記号</button>
     <button class="ribbon-tab" data-tab="edit">編集</button>
-    <button class="ribbon-tab" data-tab="format">形式</button>
+    <button class="ribbon-tab" data-tab="format">表示</button>
     <button class="ribbon-tab" data-tab="output">出力</button>
-    <button class="ribbon-tab" data-tab="insert">楽挿入</button>
+    <button class="ribbon-tab" data-tab="insert">挿入</button>
     <button class="ribbon-tab" id="shapeformat-tab-btn" data-tab="shapeformat" hidden>図形の書式</button>
   </div>
 
@@ -81,13 +82,6 @@
         <button data-link="tuplet3" title="三連符:音符と、あと2つ分の休符を追加します。休符をクリックすると音符に変えられます" class="icon-btn">3連符</button>
         <button data-link="tuplet5" title="五連符:音符と、あと4つ分の休符を追加します。休符をクリックすると音符に変えられます" class="icon-btn">5連符</button>
         <button data-link="tuplet7" title="七連符:音符と、あと6つ分の休符を追加します。休符をクリックすると音符に変えられます" class="icon-btn">7連符</button>
-      </div>
-    </div>
-    <div class="ribbon-group">
-      <span class="group-label">小節</span>
-      <div class="group-row">
-        <button id="btn-add-measure">追加</button>
-        <button id="btn-remove-measure">削除</button>
       </div>
     </div>
   </div>
@@ -217,6 +211,13 @@
   <!-- ==================== EDIT ==================== -->
   <div class="ribbon-panel" data-panel="edit">
     <div class="ribbon-group">
+      <span class="group-label">小節の追加・削除</span>
+      <div class="group-row">
+        <button id="btn-add-measure">追加</button>
+        <button id="btn-remove-measure">削除</button>
+      </div>
+    </div>
+    <div class="ribbon-group">
       <span class="group-label">移調(音階度数)</span>
       <div class="group-row">
         <label>開始 <input id="transpose-from-input" type="number" min="1" style="width:4em" /></label>
@@ -259,6 +260,12 @@
       <div class="group-row">
         <button id="btn-view-vertical" class="active">縦スクロール</button>
         <button id="btn-view-spread">見開き(横スクロール)</button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">コード表記</span>
+      <div class="group-row">
+        <label><input type="checkbox" id="chk-show-chords" checked /> 表示する</label>
       </div>
     </div>
   </div>

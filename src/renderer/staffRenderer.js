@@ -73,7 +73,7 @@ export const LAYOUT = {
   // obstacles the same way it treats a neighboring mark (see
   // upperNoteObstacles). Priority when marks would collide is コード, then
   // リハーサル, then レジストレーション — later ones shift right.
-  rehearsalBandHeight: 34,
+  rehearsalBandHeight: 29,
   // Now below the pedal stave (moved off the top of the system) — see
   // renderMeasureNumbers in app.js.
   measureNumberHeight: 14,
@@ -171,12 +171,21 @@ function ledgerReachAbove(clef, key) {
 // system in the piece (never narrower than the layout's own default, and the
 // same single gap is used for both stave pairs — see the caller in
 // renderScore, which shares one `staveGap` for every idx*staveGap offset).
+// 歌詞 (see the per-line lyric rows further down) prints at
+// getBottomLineY() + 14 for 上鍵盤/下鍵盤 — this is how much room below the
+// bottom line to reserve so that text doesn't run into the next stave down
+// when any measure actually has a lyric set for 上鍵盤/下鍵盤 (a score with
+// no lyrics at all keeps relying purely on the note-collision gap above).
+const LYRIC_RESERVE_PX = 28;
+
 function computeRequiredStaveGap(score, baseStaveGap) {
   let upperReachBelow = 0;
   let lowerReachAbove = 0;
   let lowerReachBelow = 0;
   let pedalReachAbove = 0;
+  let hasLyrics = false;
   score.measures.forEach((measure) => {
+    if ((measure.lyrics && (measure.lyrics.upper || measure.lyrics.lower))) hasLyrics = true;
     PARTS.forEach((part) => {
       const clef = getClef(score, part);
       (measure[part] || []).forEach((n) => {
@@ -194,8 +203,17 @@ function computeRequiredStaveGap(score, baseStaveGap) {
   });
   const upperLowerUnits = upperReachBelow + lowerReachAbove + STAVE_GAP_SAFETY_INDEX_UNITS;
   const lowerPedalUnits = lowerReachBelow + pedalReachAbove + STAVE_GAP_SAFETY_INDEX_UNITS;
-  const neededPx = Math.max(upperLowerUnits, lowerPedalUnits) * INDEX_STEP_PX;
-  return Math.max(baseStaveGap, STAVE_HEIGHT_PX + neededPx);
+  let neededPx = Math.max(upperLowerUnits, lowerPedalUnits) * INDEX_STEP_PX;
+  if (hasLyrics) neededPx = Math.max(neededPx, LYRIC_RESERVE_PX);
+  return {
+    gap: Math.max(baseStaveGap, STAVE_HEIGHT_PX + neededPx),
+    // How far below its own bottom line 上鍵盤/下鍵盤's lowest note reaches
+    // (px) — the per-line lyric row (see below) starts just past this so a
+    // ledger line under the very column the lyric text starts at can't run
+    // through it, whatever the whole score's tallest downward reach is.
+    upperReachBelowPx: upperReachBelow * INDEX_STEP_PX,
+    lowerReachBelowPx: lowerReachBelow * INDEX_STEP_PX,
+  };
 }
 
 // Groups measure indices into lines by GREEDILY packing them left to right
@@ -277,13 +295,19 @@ function buildStaveNotes(measure, part, clef) {
     }
     // Ctrl/Cmd+click multi-selection (see app.js's multiSelected) — a
     // distinct color from the single "active" selection above so both can be
-    // told apart when a tone happens to be both.
+    // told apart when a tone happens to be both. When every tone of a chord
+    // is selected together (double-click — see onPageDoubleClick — or manual
+    // Ctrl+click of each one), it reads as "this whole chord as one unit",
+    // so it gets the same purple as a note-range selection instead of the
+    // plain per-tone green.
     if (n.multiSelectedKeyIndices && n.multiSelectedKeyIndices.length) {
+      const wholeChord = !n.isRest && n.multiSelectedKeyIndices.length === n.keys.length;
+      const color = wholeChord ? '#9c27b0' : '#1e8e3e';
       n.multiSelectedKeyIndices.forEach((idx) => {
         if (n.isRest) {
-          vfNote.setStyle({ fillStyle: '#1e8e3e', strokeStyle: '#1e8e3e' });
+          vfNote.setStyle({ fillStyle: color, strokeStyle: color });
         } else {
-          vfNote.setKeyStyle(idx, { fillStyle: '#1e8e3e', strokeStyle: '#1e8e3e' });
+          vfNote.setKeyStyle(idx, { fillStyle: color, strokeStyle: color });
         }
       });
     }
@@ -447,7 +471,7 @@ function findAnchorForBeat(measure, notesHitByPart, beat) {
 // priority order — コード never moves, then リハーサル nudges right of any
 // コード it would overlap, then レジストレーション nudges right of both.
 function drawPerNoteMarks({
-  ctx, page, measureIndex, measure, notesHitByPart, boxY, markHitMap,
+  ctx, page, measureIndex, measure, notesHitByPart, boxY, markHitMap, showChordSymbols,
 }) {
   const shiftPast = (centerX, width, placed) => {
     let cx = centerX;
@@ -475,6 +499,7 @@ function drawPerNoteMarks({
 
   const placedChord = [...upperNoteObstacles];
   (notesHitByPart.lower || []).forEach((entry) => {
+    if (!showChordSymbols) return;
     const note = entry.noteRef;
     if (!note || note.isRest || !note.chord) return;
     const x = entry.xs ? Math.min(...entry.xs) : entry.x;
@@ -544,7 +569,8 @@ export function renderScore(container, score, layout = LAYOUT) {
   // reaching down would otherwise collide with a 下鍵盤 note's reaching up
   // (or the same for 下鍵盤/ペダル) — see computeRequiredStaveGap. Applied
   // uniformly to every system in the score, never just the offending one.
-  const staveGap = computeRequiredStaveGap(score, layout.staveGap);
+  const staveGapInfo = computeRequiredStaveGap(score, layout.staveGap);
+  const staveGap = staveGapInfo.gap;
 
   const lines = computeLines(score, layout);
   const totalLines = lines.length;
@@ -667,9 +693,19 @@ export function renderScore(container, score, layout = LAYOUT) {
             // doesn't matter which staff the user clicks it on.
             const timeSigMod = stave.getModifiers().find((mod) => mod.getCategory() === 'TimeSignature');
             if (timeSigMod) {
+              // Padded well past the glyph's own tight bounding box — a
+              // numeral time signature in particular renders quite narrow,
+              // making the un-padded box a fiddly target to click precisely.
               const bbox = timeSigMod.getBoundingBox();
+              const TIME_SIG_HIT_PAD_X = 14;
               timeSigHitMap.push({
-                page, measureIndex: m, part, x0: bbox.getX(), x1: bbox.getX() + bbox.getW(), y0: y - 10, y1: y + 50,
+                page,
+                measureIndex: m,
+                part,
+                x0: bbox.getX() - TIME_SIG_HIT_PAD_X,
+                x1: bbox.getX() + bbox.getW() + TIME_SIG_HIT_PAD_X,
+                y0: y - 20,
+                y1: y + 60,
               });
             }
           }
@@ -860,6 +896,7 @@ export function renderScore(container, score, layout = LAYOUT) {
           notesHitByPart,
           boxY: lineY + 2,
           markHitMap,
+          showChordSymbols: score.showChordSymbols !== false,
         });
       });
 
@@ -869,13 +906,19 @@ export function renderScore(container, score, layout = LAYOUT) {
       // 上鍵盤/下鍵盤 sit just below their own bottom line, in the gap before
       // the next stave down; ペダル keeps its previous spot below the measure
       // number, since there's no further stave below it to make room in.
+      const reachBelowPxByPart = { upper: staveGapInfo.upperReachBelowPx, lower: staveGapInfo.lowerReachBelowPx };
       ['upper', 'lower', 'pedal'].forEach((part) => {
         const lineLyric = measureIndices.map((m) => score.measures[m].lyrics[part]).find((t) => t);
         const stave = lineStaves[part];
         if (!lineLyric || !stave) return;
+        // 14px is the usual clearance below the bottom line, but a ledger
+        // line reaching further down than that (see computeRequiredStaveGap)
+        // pushes the lyric to start past it instead of running through it —
+        // whatever the whole score's tallest reach turns out to be, applied
+        // uniformly rather than checked per measure/column.
         const lyricY = part === 'pedal'
           ? stave.getBottomLineY() + measureNumberHeight + 10
-          : stave.getBottomLineY() + 14;
+          : stave.getBottomLineY() + Math.max(14, reachBelowPxByPart[part] + 8);
         ctx.save();
         ctx.setFont('Arial', 11, '');
         ctx.fillText(lineLyric, pageMargin, lyricY);

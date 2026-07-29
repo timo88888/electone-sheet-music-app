@@ -44,17 +44,6 @@ export const DURATION_LABELS = {
 // same as printed sheet music — these are the note choices for that value.
 export const TEMPO_NOTE_VALUES = ['w', 'h', 'q', '8', '16'];
 
-// Single-glyph note symbols for the tempo marking display (quarter/eighth use
-// the widely-supported basic Unicode block; the others fall back to the
-// Musical Symbols block, which has no BMP equivalent).
-export const TEMPO_NOTE_GLYPHS = {
-  w: '\u{1D15D}', // 𝅝
-  h: '\u{1D15E}', // 𝅗𝅥
-  q: '♩', // ♩
-  '8': '♪', // ♪
-  '16': '\u{1D161}', // 𝅘𝅥𝅯
-};
-
 // Converts a "note value = bpm" tempo marking into the quarter-note-equivalent
 // BPM that the rest of the app's timing math (durationBeats etc., all
 // relative to a quarter-note beat) expects.
@@ -224,6 +213,9 @@ export function createEmptyScore() {
     // staffRenderer's timeSigGlyph). Toggled by clicking the rendered time
     // signature itself (see app.js's timeSigHitMap handling).
     timeSigDisplay: 'numeric',
+    // Show/hide 下鍵盤's auto-detected chord symbols entirely (形式 tab) —
+    // the underlying note.chord values are untouched, only the display.
+    showChordSymbols: true,
     keySignature: 'C',
     bpm: 100,
     bpmNoteValue: 'q',
