@@ -9,7 +9,7 @@ import {
 } from './scoreModel.js';
 import { renderScore, LAYOUT } from './staffRenderer.js';
 import {
-  pitchForIndex, indexForY, transposeKey, parseKey, buildKey, shiftSemitone,
+  pitchForIndex, indexForY, transposeKey, parseKey, buildKey,
 } from './pitchMap.js';
 import {
   Player, renderScoreToWavBuffer, buildPlaybackEvents, PLAYBACK_LEAD, DEFAULT_INSTRUMENT,
@@ -44,6 +44,11 @@ function migrateScore(loaded) {
         delete n.lyric;
       });
     });
+    // 歌詞 then became one shared line per system (not per staff); now each
+    // staff (上鍵盤/下鍵盤/ペダル) gets its own line. Best-effort: the old
+    // shared value most often belonged to the melody, so it lands on 上鍵盤.
+    if (!measure.lyrics) measure.lyrics = { upper: measure.lyric || '', lower: '', pedal: '' };
+    delete measure.lyric;
     // コード used to live on the measure; now it's per-note. Best-effort
     // carry the old per-measure value onto the first 下鍵盤 note (a
     // hand-typed chord existed only because someone entered it, so treat it
@@ -103,11 +108,17 @@ function migrateScore(loaded) {
   });
   if (!loaded.bpm) loaded.bpm = 100;
   if (!loaded.bpmNoteValue) loaded.bpmNoteValue = 'q';
+  if (!loaded.timeSigDisplay) loaded.timeSigDisplay = 'numeric';
   if (!loaded.measureWidthScale) loaded.measureWidthScale = 1;
   if (!loaded.instruments) loaded.instruments = {};
   PARTS.forEach((part) => {
     if (!loaded.instruments[part]) loaded.instruments[part] = DEFAULT_INSTRUMENT;
   });
+  if (!loaded.shapes) loaded.shapes = [];
+  const defaultFieldStyle = (size) => ({ fontFamily: 'Hiragino Sans, Yu Gothic, serif', fontSize: size });
+  if (!loaded.titleStyle) loaded.titleStyle = defaultFieldStyle(22);
+  if (!loaded.composerStyle) loaded.composerStyle = defaultFieldStyle(12);
+  if (!loaded.lyricistStyle) loaded.lyricistStyle = defaultFieldStyle(12);
   return loaded;
 }
 
@@ -125,6 +136,7 @@ let selected = null; // { measureIndex, part, noteId, keyIndex } — keyIndex pi
 let hitMap = [];
 let annotationHitMap = [];
 let markHitMap = [];
+let timeSigHitMap = [];
 let dragging = null;
 let rangeDragging = null; // { part, page, startMeasure, endMeasure }
 let rangeSelection = null; // { part, measureStart, measureEnd }
@@ -345,12 +357,14 @@ function render() {
   hitMap = result.hitMap;
   annotationHitMap = result.annotationHitMap;
   markHitMap = result.markHitMap;
+  timeSigHitMap = result.timeSigHitMap;
   attachPageHandlers(result.pages);
   scoreContainer.style.transform = `scale(${zoom})`;
   updateMeasureCount();
   renderRangeHighlight(result.pages);
   renderMeasureNumbers(result.pages);
   renderTitleHeader(result.pages);
+  renderShapes(result.pages);
 }
 
 function updateMeasureCount() {
@@ -591,7 +605,28 @@ function attachPageHandlers(pages) {
   pages.forEach((pageDiv, pageIndex) => {
     pageDiv.addEventListener('mousedown', (e) => onPageMouseDown(e, pageDiv, pageIndex));
     pageDiv.addEventListener('contextmenu', (e) => onPageContextMenu(e, pageDiv, pageIndex));
+    pageDiv.addEventListener('dblclick', (e) => onPageDoubleClick(e, pageDiv, pageIndex));
   });
+}
+
+// Double-clicking one tone of a chord selects every tone of that note as one
+// group (multiSelected) — a shortcut for "treat this chord as a single unit"
+// without having to Ctrl+click each tone individually. A single-tone note has
+// nothing extra to select, so a double-click on one just behaves like the
+// existing plain click (handled by the two mousedown events dblclick fires
+// alongside) — no additional selection to make here.
+function onPageDoubleClick(e, pageDiv, pageIndex) {
+  const { x, y } = toLocalCoords(pageDiv, e.clientX, e.clientY);
+  const region = findRegionAt(pageIndex, x, y);
+  if (!region) return;
+  const hit = findClickedNote(region, x, y);
+  if (!hit || hit.noteRef.isRest || hit.noteRef.keys.length < 2) return;
+  multiSelected = hit.noteRef.keys.map((tone, keyIndex) => ({
+    measureIndex: region.measureIndex, part: region.part, noteId: hit.noteRef.id, keyIndex,
+  }));
+  selected = null;
+  render();
+  syncNoteControlsFromSelection();
 }
 
 function toLocalCoords(pageDiv, clientX, clientY) {
@@ -667,6 +702,29 @@ function findMarkRegionAt(pageIndex, x, y) {
   return markHitMap.find(
     (r) => r.page === pageIndex && x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1,
   );
+}
+
+// Hit-tests the time signature glyph at measure 1 (see staffRenderer's
+// timeSigHitMap) — checked before the general note-insertion click handling
+// in onPageMouseDown so clicking the glyph toggles its notation instead of
+// inserting a note underneath it.
+function findTimeSigRegionAt(pageIndex, x, y) {
+  return timeSigHitMap.find(
+    (r) => r.page === pageIndex && x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1,
+  );
+}
+
+// 4/4 and 2/2 are the only signatures with a traditional symbol form (see
+// staffRenderer's timeSigGlyph) — clicking the glyph for any other signature
+// has nothing to toggle to, so it's a no-op rather than a confusing flip.
+function toggleTimeSigDisplay() {
+  if (score.timeSig !== '4/4' && score.timeSig !== '2/2') {
+    setStatus('この拍子には記号表記がありません');
+    return;
+  }
+  score.timeSigDisplay = score.timeSigDisplay === 'symbol' ? 'numeric' : 'symbol';
+  pushHistory();
+  render();
 }
 
 // ---------- range-selection (measure-granularity) ----------
@@ -819,6 +877,365 @@ function renderTitleHeader(pages) {
 
   makeHeaderRow('作詞:', score.lyricist, '作詞者名', 'score-lyricist-field', topMargin + Math.round(titleHeaderHeight * 0.48), (v) => { score.lyricist = v; });
   makeHeaderRow('作曲:', score.composer, '作曲者名', 'score-composer-field', topMargin + Math.round(titleHeaderHeight * 0.72), (v) => { score.composer = v; });
+
+  // タイトル/作詞/作曲 are styled (font family/size) the same way a shape's
+  // text is, via the 図形の書式 tab — see selectField/applyFieldStyles.
+  applyFieldStyles(pageDiv);
+  [
+    ['.score-title-field', 'title'],
+    ['.score-lyricist-field', 'lyricist'],
+    ['.score-composer-field', 'composer'],
+  ].forEach(([selector, key]) => {
+    const el = pageDiv.querySelector(selector);
+    if (el) el.addEventListener('focus', () => selectField(key));
+  });
+}
+
+// ---------- 楽挿入: 図形・テキストボックス ----------
+//
+// A shape/textbox floats freely on top of one specific page (see
+// score.shapes), independent of the score's own note layout — placed via the
+// 楽挿入 tab, edited via the 図形の書式 tab (font/fill/stroke) which also
+// doubles as the font editor for the title/composer/lyricist fields above
+// (see selectField). Only one thing is ever "selected" for the format tab at
+// a time: a shape (selectedShapeId) or a header field (selectedFieldKey).
+
+let pendingShapeType = null;
+let selectedShapeId = null;
+let selectedFieldKey = null; // 'title' | 'composer' | 'lyricist'
+
+const shapeFormatTabBtn = document.getElementById('shapeformat-tab-btn');
+const shapeFillGroup = document.getElementById('shape-format-fill-group');
+const shapeFormatHint = document.getElementById('shape-format-hint');
+
+function getSelectedShape() {
+  return selectedShapeId ? score.shapes.find((s) => s.id === selectedShapeId) : null;
+}
+
+function fieldStyleFor(key) {
+  return { title: score.titleStyle, composer: score.composerStyle, lyricist: score.lyricistStyle }[key];
+}
+
+function applyFieldStyles(pageDiv) {
+  const map = {
+    '.score-title-field': score.titleStyle,
+    '.score-composer-field': score.composerStyle,
+    '.score-lyricist-field': score.lyricistStyle,
+  };
+  Object.entries(map).forEach(([selector, style]) => {
+    const el = pageDiv.querySelector(selector);
+    if (el && style) {
+      el.style.fontFamily = style.fontFamily;
+      el.style.fontSize = `${style.fontSize}px`;
+    }
+  });
+}
+
+function selectField(key) {
+  selectedFieldKey = key;
+  selectedShapeId = null;
+  shapeFormatTabBtn.hidden = false;
+  syncShapeFormatControls();
+}
+
+function selectShape(id) {
+  selectedShapeId = id;
+  selectedFieldKey = null;
+  shapeFormatTabBtn.hidden = false;
+  syncShapeFormatControls();
+  render();
+}
+
+function deselectShapeAndField() {
+  if (!selectedShapeId && !selectedFieldKey) return;
+  selectedShapeId = null;
+  selectedFieldKey = null;
+  shapeFormatTabBtn.hidden = true;
+  render();
+}
+
+function syncShapeFormatControls() {
+  const shape = getSelectedShape();
+  const fontFamilySelect = document.getElementById('shape-font-family');
+  const fontSizeInput = document.getElementById('shape-font-size');
+  const fillInput = document.getElementById('shape-fill-color');
+  const strokeInput = document.getElementById('shape-stroke-color');
+  const strokeWidthInput = document.getElementById('shape-stroke-width');
+  if (shape) {
+    shapeFormatHint.textContent = `図形を選択中(${shape.type})`;
+    fontFamilySelect.value = shape.fontFamily;
+    fontSizeInput.value = shape.fontSize;
+    shapeFillGroup.hidden = false;
+    fillInput.value = shape.fill;
+    strokeInput.value = shape.stroke;
+    strokeWidthInput.value = shape.strokeWidth;
+  } else if (selectedFieldKey) {
+    const style = fieldStyleFor(selectedFieldKey);
+    shapeFormatHint.textContent = `${{ title: 'タイトル', composer: '作曲者名', lyricist: '作詞者名' }[selectedFieldKey]}を選択中`;
+    fontFamilySelect.value = style.fontFamily;
+    fontSizeInput.value = style.fontSize;
+    shapeFillGroup.hidden = true;
+  } else {
+    shapeFormatHint.textContent = '図形またはタイトル/作詞/作曲欄をクリックして選択してください';
+  }
+}
+
+document.getElementById('shape-font-family').addEventListener('change', (e) => {
+  const shape = getSelectedShape();
+  if (shape) { shape.fontFamily = e.target.value; pushHistory(); render(); return; }
+  if (selectedFieldKey) { fieldStyleFor(selectedFieldKey).fontFamily = e.target.value; pushHistory(); render(); }
+});
+document.getElementById('shape-font-size').addEventListener('change', (e) => {
+  const size = Number(e.target.value) || 14;
+  const shape = getSelectedShape();
+  if (shape) { shape.fontSize = size; pushHistory(); render(); return; }
+  if (selectedFieldKey) { fieldStyleFor(selectedFieldKey).fontSize = size; pushHistory(); render(); }
+});
+document.getElementById('shape-fill-color').addEventListener('input', (e) => {
+  const shape = getSelectedShape();
+  if (shape) { shape.fill = e.target.value; render(); }
+});
+document.getElementById('shape-fill-color').addEventListener('change', () => pushHistory());
+document.getElementById('shape-stroke-color').addEventListener('input', (e) => {
+  const shape = getSelectedShape();
+  if (shape) { shape.stroke = e.target.value; render(); }
+});
+document.getElementById('shape-stroke-color').addEventListener('change', () => pushHistory());
+document.getElementById('shape-stroke-width').addEventListener('change', (e) => {
+  const shape = getSelectedShape();
+  if (shape) { shape.strokeWidth = Math.max(0, Number(e.target.value) || 0); pushHistory(); render(); }
+});
+document.getElementById('btn-shape-delete').addEventListener('click', () => {
+  if (!selectedShapeId) return;
+  score.shapes = score.shapes.filter((s) => s.id !== selectedShapeId);
+  deselectShapeAndField();
+  pushHistory();
+  render();
+});
+
+document.querySelectorAll('[data-shape-type]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const arming = pendingShapeType !== btn.dataset.shapeType;
+    pendingShapeType = arming ? btn.dataset.shapeType : null;
+    document.querySelectorAll('[data-shape-type]').forEach((b) => {
+      b.classList.toggle('active', arming && b === btn);
+    });
+  });
+});
+
+function defaultShapeSize(type) {
+  if (type === 'textbox') return { width: 160, height: 40 };
+  if (type === 'line' || type === 'arrow') return { width: 120, height: 0 };
+  return { width: 100, height: 100 };
+}
+
+// Click-and-drag on a page while a 楽挿入 button is armed places a new shape
+// sized to the drag rectangle (or a sensible default size on a plain click).
+// 線/矢印 additionally track `flip` (see renderShapes) since a diagonal can
+// go either way within its own bounding box.
+function startShapePlacement(e, pageDiv, pageIndex) {
+  const type = pendingShapeType;
+  const { x: startLocalX, y: startLocalY } = toLocalCoords(pageDiv, e.clientX, e.clientY);
+  let curLocalX = startLocalX;
+  let curLocalY = startLocalY;
+  let dragged = false;
+
+  const onMove = (ev) => {
+    const local = toLocalCoords(pageDiv, ev.clientX, ev.clientY);
+    if (Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) > DRAG_THRESHOLD) dragged = true;
+    curLocalX = local.x;
+    curLocalY = local.y;
+  };
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    const size = defaultShapeSize(type);
+    let shapeX = startLocalX;
+    let shapeY = startLocalY;
+    let { width, height } = size;
+    let flip = false;
+    if (dragged) {
+      const dx = curLocalX - startLocalX;
+      const dy = curLocalY - startLocalY;
+      shapeX = Math.min(startLocalX, curLocalX);
+      shapeY = Math.min(startLocalY, curLocalY);
+      if (type === 'line' || type === 'arrow') {
+        width = Math.max(10, Math.abs(dx));
+        height = Math.max(2, Math.abs(dy));
+        flip = (dx < 0) !== (dy < 0);
+      } else {
+        width = Math.max(20, Math.abs(dx));
+        height = Math.max(20, Math.abs(dy));
+      }
+    }
+    const shape = {
+      id: makeNoteId(),
+      page: pageIndex,
+      type,
+      x: shapeX,
+      y: shapeY,
+      width,
+      height,
+      flip,
+      text: '',
+      fontFamily: 'Hiragino Sans, Yu Gothic, sans-serif',
+      fontSize: 14,
+      fill: '#ffffff',
+      stroke: '#333333',
+      strokeWidth: 2,
+    };
+    score.shapes.push(shape);
+    pendingShapeType = null;
+    document.querySelectorAll('[data-shape-type]').forEach((b) => b.classList.remove('active'));
+    pushHistory();
+    selectShape(shape.id);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+function startShapeMove(shape, e) {
+  const startClientX = e.clientX;
+  const startClientY = e.clientY;
+  const origX = shape.x;
+  const origY = shape.y;
+  const onMove = (ev) => {
+    shape.x = origX + (ev.clientX - startClientX);
+    shape.y = origY + (ev.clientY - startClientY);
+    render();
+  };
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    pushHistory();
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+function startShapeResize(shape, corner, e) {
+  const startClientX = e.clientX;
+  const startClientY = e.clientY;
+  const orig = {
+    x: shape.x, y: shape.y, width: shape.width, height: shape.height,
+  };
+  const onMove = (ev) => {
+    const dx = ev.clientX - startClientX;
+    const dy = ev.clientY - startClientY;
+    if (corner.includes('e')) shape.width = Math.max(10, orig.width + dx);
+    if (corner.includes('s')) shape.height = Math.max(10, orig.height + dy);
+    if (corner.includes('w')) { shape.width = Math.max(10, orig.width - dx); shape.x = orig.x + orig.width - shape.width; }
+    if (corner.includes('n')) { shape.height = Math.max(10, orig.height - dy); shape.y = orig.y + orig.height - shape.height; }
+    render();
+  };
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    pushHistory();
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function renderShapes(pages) {
+  pages.forEach((pageDiv) => {
+    pageDiv.querySelectorAll('.shape-el').forEach((el) => el.remove());
+  });
+  score.shapes.forEach((shape) => {
+    const pageDiv = pages[shape.page];
+    if (!pageDiv) return;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'shape-el';
+    if (shape.id === selectedShapeId) wrapper.classList.add('selected');
+    wrapper.style.left = `${shape.x}px`;
+    wrapper.style.top = `${shape.y}px`;
+    wrapper.style.width = `${shape.width}px`;
+    wrapper.style.height = `${shape.height}px`;
+
+    if (shape.type === 'rect') {
+      wrapper.style.background = shape.fill;
+      wrapper.style.border = `${shape.strokeWidth}px solid ${shape.stroke}`;
+    } else if (shape.type === 'ellipse') {
+      wrapper.style.background = shape.fill;
+      wrapper.style.border = `${shape.strokeWidth}px solid ${shape.stroke}`;
+      wrapper.style.borderRadius = '50%';
+    } else if (shape.type === 'line' || shape.type === 'arrow') {
+      const svg = document.createElementNS(SVG_NS, 'svg');
+      svg.setAttribute('width', shape.width);
+      svg.setAttribute('height', Math.max(shape.height, 1));
+      svg.style.position = 'absolute';
+      svg.style.left = '0';
+      svg.style.top = '0';
+      svg.style.overflow = 'visible';
+      svg.style.pointerEvents = 'none';
+      const line = document.createElementNS(SVG_NS, 'line');
+      line.setAttribute('x1', shape.flip ? shape.width : 0);
+      line.setAttribute('y1', 0);
+      line.setAttribute('x2', shape.flip ? 0 : shape.width);
+      line.setAttribute('y2', shape.height);
+      line.setAttribute('stroke', shape.stroke);
+      line.setAttribute('stroke-width', shape.strokeWidth);
+      if (shape.type === 'arrow') {
+        const markerId = `arrowhead-${shape.id}`;
+        const marker = document.createElementNS(SVG_NS, 'marker');
+        marker.setAttribute('id', markerId);
+        marker.setAttribute('markerWidth', '10');
+        marker.setAttribute('markerHeight', '10');
+        marker.setAttribute('refX', '8');
+        marker.setAttribute('refY', '5');
+        marker.setAttribute('orient', 'auto');
+        const arrowPath = document.createElementNS(SVG_NS, 'path');
+        arrowPath.setAttribute('d', 'M0,0 L10,5 L0,10 Z');
+        arrowPath.setAttribute('fill', shape.stroke);
+        marker.appendChild(arrowPath);
+        const defs = document.createElementNS(SVG_NS, 'defs');
+        defs.appendChild(marker);
+        svg.appendChild(defs);
+        line.setAttribute('marker-end', `url(#${markerId})`);
+      }
+      svg.appendChild(line);
+      wrapper.appendChild(svg);
+    }
+
+    // Every shape carries an editable textbox by default (per spec) — even
+    // 線/矢印, where it just floats over the bounding box.
+    const textEl = document.createElement('div');
+    textEl.className = 'shape-text';
+    textEl.contentEditable = 'true';
+    textEl.textContent = shape.text || '';
+    textEl.style.fontFamily = shape.fontFamily;
+    textEl.style.fontSize = `${shape.fontSize}px`;
+    textEl.addEventListener('mousedown', (ev) => ev.stopPropagation());
+    textEl.addEventListener('blur', () => {
+      if (shape.text !== textEl.textContent) { shape.text = textEl.textContent; pushHistory(); }
+    });
+    wrapper.appendChild(textEl);
+
+    if (shape.id === selectedShapeId) {
+      ['nw', 'ne', 'sw', 'se'].forEach((corner) => {
+        const handle = document.createElement('div');
+        handle.className = `shape-handle shape-handle-${corner}`;
+        handle.addEventListener('mousedown', (ev) => {
+          ev.stopPropagation();
+          ev.preventDefault();
+          startShapeResize(shape, corner, ev);
+        });
+        wrapper.appendChild(handle);
+      });
+    }
+
+    wrapper.addEventListener('mousedown', (ev) => {
+      if (pendingShapeType) return;
+      ev.stopPropagation();
+      ev.preventDefault();
+      selectShape(shape.id);
+      startShapeMove(shape, ev);
+    });
+
+    pageDiv.appendChild(wrapper);
+  });
 }
 
 // ---------- 形式タブ: 譜面全体の幅（ドラッグで調整） ----------
@@ -874,13 +1291,75 @@ function setWidthScaleFromClientX(clientX) {
 
 const contextMenuEl = document.getElementById('context-menu');
 
+// A submenu (item.submenu — see showNoteRangeContextMenu's 強弱記号/
+// アーティキュレーション/etc. categories) is a second floating panel opened
+// on hover, positioned beside whichever row triggered it. Only one is ever
+// open at a time (this app nests one level deep: category → value, never
+// category → category), so a single reference is enough to track and close
+// it. Leaving the parent row AND leaving the panel itself both schedule the
+// same close call — hovering the *other* one first cancels it, so moving the
+// mouse diagonally from row to panel doesn't flicker it shut.
+let openSubmenuEl = null;
+let openSubmenuParentRow = null;
+let submenuCloseTimer = null;
+
+function closeOpenSubmenu() {
+  clearTimeout(submenuCloseTimer);
+  if (openSubmenuEl) { openSubmenuEl.remove(); openSubmenuEl = null; }
+  openSubmenuParentRow = null;
+}
+
+function scheduleSubmenuClose() {
+  clearTimeout(submenuCloseTimer);
+  submenuCloseTimer = setTimeout(closeOpenSubmenu, 200);
+}
+
+function openSubmenuFor(parentRow, subitems) {
+  if (openSubmenuParentRow === parentRow) { clearTimeout(submenuCloseTimer); return; }
+  closeOpenSubmenu();
+  const panel = document.createElement('div');
+  panel.className = 'context-menu';
+  subitems.forEach((sub) => {
+    if (sub.separator) {
+      const sep = document.createElement('div');
+      sep.className = 'context-menu-separator';
+      panel.appendChild(sep);
+      return;
+    }
+    const subRow = document.createElement('div');
+    subRow.className = 'context-menu-item';
+    if (sub.active) subRow.classList.add('active');
+    subRow.textContent = sub.label;
+    subRow.addEventListener('click', () => {
+      hideContextMenu();
+      sub.onClick();
+    });
+    panel.appendChild(subRow);
+  });
+  panel.addEventListener('mouseenter', () => clearTimeout(submenuCloseTimer));
+  panel.addEventListener('mouseleave', scheduleSubmenuClose);
+  document.body.appendChild(panel);
+  const parentRect = parentRow.getBoundingClientRect();
+  const panelRect = panel.getBoundingClientRect();
+  const left = parentRect.right + panelRect.width > window.innerWidth
+    ? Math.max(0, parentRect.left - panelRect.width)
+    : parentRect.right;
+  const top = Math.min(parentRect.top, window.innerHeight - panelRect.height - 4);
+  panel.style.left = `${left}px`;
+  panel.style.top = `${Math.max(0, top)}px`;
+  openSubmenuEl = panel;
+  openSubmenuParentRow = parentRow;
+}
+
 function hideContextMenu() {
   contextMenuEl.hidden = true;
   contextMenuEl.innerHTML = '';
+  closeOpenSubmenu();
 }
 
 function showContextMenu(clientX, clientY, items) {
   contextMenuEl.innerHTML = '';
+  closeOpenSubmenu();
   items.forEach((item) => {
     if (item.separator) {
       const sep = document.createElement('div');
@@ -896,10 +1375,16 @@ function showContextMenu(clientX, clientY, items) {
       row.className = 'context-menu-item';
       if (item.active) row.classList.add('active');
       row.textContent = item.label;
-      row.addEventListener('click', () => {
-        hideContextMenu();
-        item.onClick();
-      });
+      if (item.submenu) {
+        row.classList.add('has-submenu');
+        row.addEventListener('mouseenter', () => openSubmenuFor(row, item.submenu));
+        row.addEventListener('mouseleave', scheduleSubmenuClose);
+      } else {
+        row.addEventListener('click', () => {
+          hideContextMenu();
+          item.onClick();
+        });
+      }
       contextMenuEl.appendChild(row);
     }
   });
@@ -912,6 +1397,12 @@ function showContextMenu(clientX, clientY, items) {
 }
 
 document.addEventListener('mousedown', (e) => {
+  // A submenu panel (see openSubmenuFor) lives outside contextMenuEl itself
+  // (a separate floating element), so clicking one of its rows must not
+  // count as "clicked outside" — that would hideContextMenu() (removing the
+  // row) on mousedown, before the click event meant to fire its onClick ever
+  // gets to run.
+  if (openSubmenuEl && openSubmenuEl.contains(e.target)) return;
   if (!contextMenuEl.hidden && !contextMenuEl.contains(e.target)) hideContextMenu();
 });
 document.addEventListener('keydown', (e) => {
@@ -926,7 +1417,32 @@ document.addEventListener('keydown', (e) => {
 
 function onPageMouseDown(e, pageDiv, pageIndex) {
   if (e.button !== 0) return;
+
+  // An armed 楽挿入 button takes over the whole page (drag-to-place a new
+  // shape) regardless of what's underneath — checked first, before even the
+  // time signature toggle below.
+  if (pendingShapeType) {
+    startShapePlacement(e, pageDiv, pageIndex);
+    return;
+  }
+
+  // A click that reaches here (a shape's own mousedown handler stops
+  // propagation before this point) is a normal score interaction, so any
+  // selected shape/header-field's format-tab session ends.
+  deselectShapeAndField();
+
   const { x, y } = toLocalCoords(pageDiv, e.clientX, e.clientY);
+
+  // Checked before everything else (including note insertion below) so a
+  // click on the time signature glyph toggles its notation instead of
+  // inserting a note underneath it — see timeSigGlyph in staffRenderer.js.
+  if (findTimeSigRegionAt(pageIndex, x, y)) {
+    clearRangeSelection();
+    clearMeasureSelection();
+    clearSelection();
+    toggleTimeSigDisplay();
+    return;
+  }
 
   const markRegion = findMarkRegionAt(pageIndex, x, y);
   if (markRegion) {
@@ -1218,6 +1734,7 @@ document.querySelector('.score-scroll').addEventListener('mousedown', (e) => {
   clearRangeSelection();
   clearMeasureSelection();
   clearSelection();
+  deselectShapeAndField();
 });
 
 // Parses a 'tuplet3' / 'tuplet5' / 'tuplet7' link value into its note count.
@@ -1454,27 +1971,87 @@ function deleteSelected() {
   syncNoteControlsFromSelection();
 }
 
+// Inserts noteClipboard's contents right before the currently `selected`
+// note — the keyboard Ctrl+V equivalent of pasteNotesAtPosition, which needs
+// a mouse position that a keyboard shortcut doesn't have.
+function pasteNotesAtSelection() {
+  if (!noteClipboard || !noteClipboard.length) { setStatus('コピーした音符がありません'); return; }
+  if (!selected) { setStatus('貼り付け先の音符を選択してください'); return; }
+  const measure = score.measures[selected.measureIndex];
+  const notes = measure[selected.part];
+  const insertIndex = notes.findIndex((n) => n.id === selected.noteId);
+  const clones = noteClipboard.map((n) => ({ ...structuredClone(n), id: makeNoteId() }));
+  notes.splice(insertIndex === -1 ? notes.length : insertIndex, 0, ...clones);
+  cascadeOverflow(selected.measureIndex, selected.part);
+  pushHistory();
+  render();
+  setStatus(`${clones.length}個の音符をペーストしました`);
+}
+
+// ---------- standard copy/cut/paste/delete shortcuts ----------
+//
+// Each acts on whichever selection is currently active, in the same priority
+// order as the right-click menus themselves: a 2+ note drag-range first (see
+// getActiveNoteSelectionRefs), then a single selected note, then the
+// measure-granular rangeSelection (see the ---------- range-selection
+// (measure-granularity) ---------- section above).
+
+function copyActiveSelection() {
+  if (getActiveNoteSelectionRefs().length) { copySelectedNotes(); return; }
+  if (rangeSelection) { doRangeCopy(); return; }
+  setStatus('コピーする音符または範囲を選択してください');
+}
+
+function cutActiveSelection() {
+  if (getActiveNoteSelectionRefs().length) { copySelectedNotes(); deleteSelectedNoteRange(); return; }
+  if (rangeSelection) { doRangeCopy(); doRangeDelete(); return; }
+  setStatus('切り取る音符または範囲を選択してください');
+}
+
+function pasteActiveSelection() {
+  if (selected && noteClipboard && noteClipboard.length) { pasteNotesAtSelection(); return; }
+  if (rangeSelection && clipboard) { doRangePaste(rangeSelection.measureStart); return; }
+  setStatus('貼り付け先を選択してください');
+}
+
+function deleteActiveSelection() {
+  if (noteRangeSelection && noteRangeSelection.length >= 2) { deleteSelectedNoteRange(); return; }
+  if (selected) { deleteSelected(); return; }
+  if (rangeSelection) { doRangeDelete(); }
+}
+
 document.addEventListener('keydown', (e) => {
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
+  const tag = e.target.tagName;
+  const inFormControl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  const hasSelection = selected || (noteRangeSelection && noteRangeSelection.length >= 2) || rangeSelection;
+  if (!inFormControl && (e.key === 'Delete' || e.key === 'Backspace') && hasSelection) {
     e.preventDefault();
-    deleteSelected();
+    deleteActiveSelection();
   } else if (e.ctrlKey && e.key.toLowerCase() === 'z' && !e.shiftKey) {
     e.preventDefault();
     undo();
   } else if (e.ctrlKey && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
     e.preventDefault();
     redo();
-  } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && selected) {
-    // ↑/↓ nudges the selected tone by one chromatic semitone — guarded to
-    // regular (non-form-control) focus so it doesn't hijack a number input's
-    // own native up/down spinner (e.g. 対象小節) or move a text cursor.
-    const tag = e.target.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  } else if (!inFormControl && e.ctrlKey && e.key.toLowerCase() === 'c') {
+    e.preventDefault();
+    copyActiveSelection();
+  } else if (!inFormControl && e.ctrlKey && e.key.toLowerCase() === 'x') {
+    e.preventDefault();
+    cutActiveSelection();
+  } else if (!inFormControl && e.ctrlKey && e.key.toLowerCase() === 'v') {
+    e.preventDefault();
+    pasteActiveSelection();
+  } else if (!inFormControl && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && selected) {
+    // ↑/↓ nudges the selected tone by one diatonic staff step (line/space) —
+    // guarded to regular (non-form-control) focus so it doesn't hijack a
+    // number input's own native up/down spinner (e.g. 対象小節) or move a
+    // text cursor.
     const note = getSelectedNote();
     const tone = getSelectedTone();
     if (!note || note.isRest || !tone) return;
     e.preventDefault();
-    tone.key = shiftSemitone(tone.key, e.key === 'ArrowUp' ? 1 : -1);
+    tone.key = transposeKey(tone.key, e.key === 'ArrowUp' ? 1 : -1);
     sortNoteKeys(note);
     pushHistory();
     render();
@@ -1856,6 +2433,15 @@ function clearPlaybackHighlights() {
   highlightEls = [];
 }
 
+// Pausing (unlike a full stop) leaves whatever highlight box is currently
+// showing right where it is — only the *pending* timers (future notes'
+// show/hide) are cancelled, so nothing changes further until playback
+// resumes and reschedules from the paused position.
+function freezePlaybackHighlights() {
+  highlightTimers.forEach(clearTimeout);
+  highlightTimers = [];
+}
+
 function findNoteHitById(noteId) {
   for (let i = 0; i < hitMap.length; i += 1) {
     const region = hitMap[i];
@@ -1928,21 +2514,48 @@ function computePlaybackStartTime() {
 const playBtn = document.getElementById('btn-play');
 const pauseBtn = document.getElementById('btn-pause');
 
+const PLAY_ICON = '<svg viewBox="0 0 24 24" width="16" height="16"><polygon points="5,3 21,12 5,21" fill="currentColor"/></svg>';
+const STOP_ICON = '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="4" y="4" width="16" height="16" fill="currentColor"/></svg>';
+
+// btn-play doubles as play/stop (▶ while idle or paused, ■ while actually
+// sounding — clicking it mid-playback stops outright, back to position 0).
+// btn-pause is the separate 一時停止 control (see below) — pausing swaps
+// btn-play's icon back to ▶ but in a distinct color so it visibly reads as
+// "resume from here", not "start over" (見た目上もクリック先が違うと分かる
+// ように — 色を変えているのはこのため).
+function setPlayButtonState(state) {
+  playBtn.classList.remove('active', 'paused');
+  if (state === 'playing') {
+    playBtn.innerHTML = STOP_ICON;
+    playBtn.title = '停止';
+    playBtn.classList.add('active');
+  } else if (state === 'paused') {
+    playBtn.innerHTML = PLAY_ICON;
+    playBtn.title = '再生(一時停止した位置から再開)';
+    playBtn.classList.add('paused');
+  } else {
+    playBtn.innerHTML = PLAY_ICON;
+    playBtn.title = '再生/停止(音符を選択中ならそこから再生)';
+  }
+  pauseBtn.disabled = state !== 'playing';
+}
+setPlayButtonState('idle');
+
 playBtn.addEventListener('click', async () => {
   if (player.playing) {
     player.stop();
     clearPlaybackHighlights();
-    playBtn.classList.remove('active');
+    setPlayButtonState('idle');
     return;
   }
   const startTime = computePlaybackStartTime();
-  playBtn.classList.add('active');
+  setPlayButtonState('playing');
   playBtn.disabled = true;
   clearPlaybackHighlights();
   schedulePlaybackHighlights(startTime);
   try {
     await player.play(score, effectiveQuarterBpm(score), score.instruments, () => {
-      playBtn.classList.remove('active');
+      setPlayButtonState('idle');
       clearPlaybackHighlights();
     }, startTime);
   } finally {
@@ -1953,12 +2566,28 @@ playBtn.addEventListener('click', async () => {
 pauseBtn.addEventListener('click', () => {
   if (!player.playing) return;
   player.pause();
-  clearPlaybackHighlights();
-  playBtn.classList.remove('active');
+  // The paused-at note's playing-highlight stays on screen (see
+  // schedulePlaybackHighlights/clearPlaybackHighlights) rather than clearing
+  // like a full stop does — freezeplaybackHighlights below cancels only the
+  // *pending* highlight timers so nothing still queues in after the pause,
+  // without removing whatever highlight box is already showing.
+  freezePlaybackHighlights();
+  setPlayButtonState('paused');
 });
 
 document.getElementById('btn-print').addEventListener('click', () => {
   window.print();
+});
+
+document.getElementById('btn-export-pdf').addEventListener('click', async () => {
+  if (!window.electronAPI) { setStatus('PDF書き出しはアプリ版でのみ利用できます'); return; }
+  setStatus('PDFを書き出しています…');
+  try {
+    const result = await window.electronAPI.exportPdf(`${score.title || 'score'}.pdf`);
+    setStatus(result.canceled ? '' : `PDFを書き出しました: ${result.filePath}`);
+  } catch (err) {
+    setStatus('PDFの書き出しに失敗しました');
+  }
 });
 
 function download(filename, blobParts, type) {
@@ -2096,6 +2725,141 @@ PARTS.forEach((part) => {
 
 // --- 楽器(パートごとに選択可能、再生・WAV書き出しで使う) ---
 
+// General MIDI's 128 instrument names, as smplr's getSoundfontNames() returns
+// them (English, snake_case) → the Japanese labels shown in the select. The
+// select's own value stays the original GM name (what Player/playback.js
+// actually loads); only the visible text is translated.
+const INSTRUMENT_LABELS_JA = {
+  acoustic_grand_piano: 'アコースティックグランドピアノ',
+  bright_acoustic_piano: 'ブライトアコースティックピアノ',
+  electric_grand_piano: 'エレクトリックグランドピアノ',
+  honkytonk_piano: 'ホンキートンクピアノ',
+  electric_piano_1: 'エレクトリックピアノ1',
+  electric_piano_2: 'エレクトリックピアノ2',
+  harpsichord: 'ハープシコード',
+  clavinet: 'クラビネット',
+  celesta: 'チェレスタ',
+  glockenspiel: 'グロッケンシュピール',
+  music_box: 'オルゴール',
+  vibraphone: 'ヴィブラフォン',
+  marimba: 'マリンバ',
+  xylophone: 'シロフォン',
+  tubular_bells: 'チューブラーベル',
+  dulcimer: 'ダルシマー',
+  drawbar_organ: 'ドローバーオルガン',
+  percussive_organ: 'パーカッシブオルガン',
+  rock_organ: 'ロックオルガン',
+  church_organ: 'チャーチオルガン',
+  reed_organ: 'リードオルガン',
+  accordion: 'アコーディオン',
+  harmonica: 'ハーモニカ',
+  tango_accordion: 'タンゴアコーディオン(バンドネオン)',
+  acoustic_guitar_nylon: 'クラシックギター(ナイロン弦)',
+  acoustic_guitar_steel: 'アコースティックギター(スチール弦)',
+  electric_guitar_jazz: 'ジャズギター',
+  electric_guitar_clean: 'クリーンエレキギター',
+  electric_guitar_muted: 'ミュートエレキギター',
+  overdriven_guitar: 'オーバードライブギター',
+  distortion_guitar: 'ディストーションギター',
+  guitar_harmonics: 'ギターハーモニクス',
+  acoustic_bass: 'アコースティックベース',
+  electric_bass_finger: 'エレキベース(指弾き)',
+  electric_bass_pick: 'エレキベース(ピック弾き)',
+  fretless_bass: 'フレットレスベース',
+  slap_bass_1: 'スラップベース1',
+  slap_bass_2: 'スラップベース2',
+  synth_bass_1: 'シンセベース1',
+  synth_bass_2: 'シンセベース2',
+  violin: 'ヴァイオリン',
+  viola: 'ヴィオラ',
+  cello: 'チェロ',
+  contrabass: 'コントラバス',
+  tremolo_strings: 'トレモロストリングス',
+  pizzicato_strings: 'ピチカートストリングス',
+  orchestral_harp: 'オーケストラルハープ',
+  timpani: 'ティンパニ',
+  string_ensemble_1: 'ストリングアンサンブル1',
+  string_ensemble_2: 'ストリングアンサンブル2',
+  synth_strings_1: 'シンセストリングス1',
+  synth_strings_2: 'シンセストリングス2',
+  choir_aahs: '混声合唱(アー)',
+  voice_oohs: '混声合唱(ウー)',
+  synth_choir: 'シンセコーラス',
+  orchestra_hit: 'オーケストラヒット',
+  trumpet: 'トランペット',
+  trombone: 'トロンボーン',
+  tuba: 'チューバ',
+  muted_trumpet: 'ミュートトランペット',
+  french_horn: 'フレンチホルン',
+  brass_section: 'ブラスセクション',
+  synth_brass_1: 'シンセブラス1',
+  synth_brass_2: 'シンセブラス2',
+  soprano_sax: 'ソプラノサックス',
+  alto_sax: 'アルトサックス',
+  tenor_sax: 'テナーサックス',
+  baritone_sax: 'バリトンサックス',
+  oboe: 'オーボエ',
+  english_horn: 'イングリッシュホルン',
+  bassoon: 'ファゴット',
+  clarinet: 'クラリネット',
+  piccolo: 'ピッコロ',
+  flute: 'フルート',
+  recorder: 'リコーダー',
+  pan_flute: 'パンフルート',
+  blown_bottle: 'ボトルブロー',
+  shakuhachi: '尺八',
+  whistle: 'ホイッスル',
+  ocarina: 'オカリナ',
+  lead_1_square: 'リード1(矩形波)',
+  lead_2_sawtooth: 'リード2(ノコギリ波)',
+  lead_3_calliope: 'リード3(カリオペ)',
+  lead_4_chiff: 'リード4(チフ)',
+  lead_5_charang: 'リード5(チャランゴ)',
+  lead_6_voice: 'リード6(ボイス)',
+  lead_7_fifths: 'リード7(5度)',
+  lead_8_bass__lead: 'リード8(ベース&リード)',
+  pad_1_new_age: 'パッド1(ニューエイジ)',
+  pad_2_warm: 'パッド2(ウォーム)',
+  pad_3_polysynth: 'パッド3(ポリシンセ)',
+  pad_4_choir: 'パッド4(クワイア)',
+  pad_5_bowed: 'パッド5(ボウド)',
+  pad_6_metallic: 'パッド6(メタリック)',
+  pad_7_halo: 'パッド7(ハロー)',
+  pad_8_sweep: 'パッド8(スウィープ)',
+  fx_1_rain: 'FX1(レイン)',
+  fx_2_soundtrack: 'FX2(サウンドトラック)',
+  fx_3_crystal: 'FX3(クリスタル)',
+  fx_4_atmosphere: 'FX4(アトモスフィア)',
+  fx_5_brightness: 'FX5(ブライトネス)',
+  fx_6_goblins: 'FX6(ゴブリン)',
+  fx_7_echoes: 'FX7(エコー)',
+  fx_8_scifi: 'FX8(SF)',
+  sitar: 'シタール',
+  banjo: 'バンジョー',
+  shamisen: '三味線',
+  koto: '琴',
+  kalimba: 'カリンバ',
+  bagpipe: 'バグパイプ',
+  fiddle: 'フィドル',
+  shanai: 'シャナイ',
+  tinkle_bell: 'ティンクルベル',
+  agogo: 'アゴゴ',
+  steel_drums: 'スティールドラム',
+  woodblock: 'ウッドブロック',
+  taiko_drum: '太鼓',
+  melodic_tom: 'メロディックタム',
+  synth_drum: 'シンセドラム',
+  reverse_cymbal: 'リバースシンバル',
+  guitar_fret_noise: 'ギターフレットノイズ',
+  breath_noise: 'ブレスノイズ',
+  seashore: '波の音',
+  bird_tweet: '鳥のさえずり',
+  telephone_ring: '電話の呼び出し音',
+  helicopter: 'ヘリコプター',
+  applause: '拍手',
+  gunshot: '銃声',
+};
+
 const SOUNDFONT_NAMES = getSoundfontNames();
 PARTS.forEach((part) => {
   const select = document.getElementById(`instrument-${part}`);
@@ -2103,7 +2867,7 @@ PARTS.forEach((part) => {
   SOUNDFONT_NAMES.forEach((name) => {
     const opt = document.createElement('option');
     opt.value = name;
-    opt.textContent = name;
+    opt.textContent = INSTRUMENT_LABELS_JA[name] || name;
     select.appendChild(opt);
   });
   select.value = score.instruments[part] || DEFAULT_INSTRUMENT;
@@ -2168,14 +2932,16 @@ document.getElementById('btn-decresc-end').addEventListener('click', () => {
   withSelectedNote((note) => { note.hairpin = note.hairpin === 'decresc-end' ? null : 'decresc-end'; });
 });
 document.getElementById('btn-lyric').addEventListener('click', () => {
-  // 歌詞 is per-line (段落), not per-note — 対象小節 (same input the 小節
-  // タブ's マーカー/小節線 controls use) picks which line via whichever
-  // measure it belongs to.
+  // 歌詞 is per-line (段落) *per staff*, not per-note — 対象小節 (same input
+  // the 小節タブ's マーカー/小節線 controls use) picks which line via
+  // whichever measure it belongs to, and lyric-part-select picks which staff.
   const measure = targetMeasure();
   if (!measure) return;
-  showPromptModal('歌詞（この小節が属する段落に表示されます）', measure.lyric || '').then((value) => {
+  const part = document.getElementById('lyric-part-select').value;
+  const partLabel = { upper: '上鍵盤', lower: '下鍵盤', pedal: 'ペダル' }[part];
+  showPromptModal(`歌詞・${partLabel}（この小節が属する段落に表示されます）`, measure.lyrics[part] || '').then((value) => {
     if (value === null) return;
-    measure.lyric = value;
+    measure.lyrics[part] = value;
     pushHistory();
     render();
   });
@@ -2450,12 +3216,91 @@ function pasteNotesAtPosition(region, localX) {
   setStatus(`${clones.length}個の音符をペーストしました`);
 }
 
+const DYNAMIC_OPTIONS = ['', 'pp', 'p', 'mp', 'mf', 'f', 'ff'];
+const HAIRPIN_OPTIONS = [
+  { value: 'cresc-start', label: 'クレッシェンド開始' },
+  { value: 'cresc-end', label: 'クレッシェンド終了' },
+  { value: 'decresc-start', label: 'デクレッシェンド開始' },
+  { value: 'decresc-end', label: 'デクレッシェンド終了' },
+];
+const ARTICULATION_OPTIONS = [
+  { value: '', label: 'なし' },
+  { value: 'staccato', label: 'スタッカート' },
+  { value: 'staccatissimo', label: 'スタッカーティッシモ' },
+  { value: 'tenuto', label: 'テヌート' },
+  { value: 'accent', label: 'アクセント' },
+  { value: 'marcato', label: 'マルカート' },
+  { value: 'fermata', label: 'フェルマータ' },
+  { value: 'trill', label: 'トリル' },
+  { value: 'turn', label: 'ターン' },
+  { value: 'mordent', label: 'モルデント' },
+  { value: 'arpeggio', label: 'アルペジオ' },
+];
+
+// Builds the 強弱記号/クレッシェンド・デクレッシェンド/アーティキュレーション/
+// リハーサル記号/レジストレーション submenus for a single selected note's
+// right-click menu (メニュー＞カテゴリ＞値, see openSubmenuFor) — an
+// alternative to the ribbon's 記号 tab for setting the same attributes
+// without leaving the score. Only meaningful for exactly one selected note,
+// not a multi-note range (see showNoteRangeContextMenu's refs.length check).
+function noteAttributeSubmenus() {
+  const note = getSelectedNote();
+  if (!note) return [];
+  const mark = getMarkForSelectedNote();
+  return [
+    {
+      label: '強弱記号',
+      submenu: DYNAMIC_OPTIONS.map((v) => ({
+        label: v || 'なし',
+        active: (note.dynamic || '') === v,
+        onClick: () => withSelectedNote((n) => { n.dynamic = v; }),
+      })),
+    },
+    {
+      label: 'クレッシェンド・デクレッシェンド',
+      submenu: HAIRPIN_OPTIONS.map((opt) => ({
+        label: opt.label,
+        active: note.hairpin === opt.value,
+        onClick: () => withSelectedNote((n) => {
+          n.hairpin = n.hairpin === opt.value ? null : opt.value;
+        }),
+      })),
+    },
+    {
+      label: 'アーティキュレーション',
+      submenu: ARTICULATION_OPTIONS.map((opt) => ({
+        label: opt.label,
+        active: (note.articulation || '') === opt.value,
+        onClick: () => withSelectedNote((n) => { n.articulation = opt.value; }),
+      })),
+    },
+    {
+      label: 'リハーサル記号',
+      submenu: REHEARSAL_OPTIONS.map((v) => ({
+        label: v || 'なし',
+        active: (mark ? mark.rehearsal || '' : '') === v,
+        onClick: () => setMarkForSelectedNote('rehearsal', v),
+      })),
+    },
+    {
+      label: 'レジストレーション',
+      submenu: REGISTRATION_OPTIONS.map((v) => ({
+        label: v || 'なし',
+        active: (mark ? mark.registration || '' : '') === v,
+        onClick: () => setMarkForSelectedNote('registration', v),
+      })),
+    },
+  ];
+}
+
 function showNoteRangeContextMenu(clientX, clientY) {
   const refs = getActiveNoteSelectionRefs();
+  const attributeSubmenus = refs.length === 1 ? noteAttributeSubmenus() : [];
   showContextMenu(clientX, clientY, [
     { header: `${refs.length}個の音符を選択中` },
     { label: 'コピー', onClick: copySelectedNotes },
     { label: '削除', onClick: deleteSelectedNoteRange },
+    ...(attributeSubmenus.length ? [{ separator: true }, ...attributeSubmenus] : []),
     { separator: true },
     {
       label: '選択解除',

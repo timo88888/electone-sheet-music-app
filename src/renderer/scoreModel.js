@@ -180,10 +180,12 @@ export function createEmptyMeasure() {
     // simultaneous notes (a different part, or another tone of the same
     // chord) edits the same mark instead of stacking duplicates.
     marks: [],
-    // 歌詞 — one line of text per system (段落), not per note. Shown for
-    // whichever line this measure currently belongs to (see staffRenderer's
-    // per-line lyric row) — set via targetMeasure()'s "対象小節" input.
-    lyric: '',
+    // 歌詞 — one line of text per system (段落) *per staff* (上鍵盤/下鍵盤/
+    // ペダル each get their own line), not per note. Shown for whichever line
+    // this measure currently belongs to (see staffRenderer's per-line lyric
+    // rows) — set via targetMeasure()'s "対象小節" input plus the 歌詞 ribbon
+    // group's staff select.
+    lyrics: { upper: '', lower: '', pedal: '' },
   };
 }
 
@@ -216,6 +218,12 @@ export function createEmptyScore() {
     composer: '',
     lyricist: '',
     timeSig: '4/4',
+    // 'numeric' (digits, e.g. "4/4") or 'symbol' — only 4/4 and 2/2 actually
+    // have a traditional symbol form (common time "C" / alla breve "C|"), so
+    // this only changes anything when timeSig is one of those two (see
+    // staffRenderer's timeSigGlyph). Toggled by clicking the rendered time
+    // signature itself (see app.js's timeSigHitMap handling).
+    timeSigDisplay: 'numeric',
     keySignature: 'C',
     bpm: 100,
     bpmNoteValue: 'q',
@@ -228,6 +236,20 @@ export function createEmptyScore() {
     // Playback/WAV-export instrument per part (上鍵盤/下鍵盤/ペダル) — a
     // General MIDI soundfont name (see smplr's getSoundfontNames()).
     instruments: { upper: 'acoustic_grand_piano', lower: 'acoustic_grand_piano', pedal: 'acoustic_bass' },
+    // Free-floating shapes/textboxes (see the 楽挿入 tab) — each anchored to
+    // one specific page index (like the title/composer/lyricist fields
+    // already were), not to a measure, so they stay put even as the score's
+    // content reflows. { id, page, type: 'textbox'|'rect'|'ellipse'|'line'|
+    // 'arrow', x, y, width, height, text, fontFamily, fontSize, fill, stroke,
+    // strokeWidth } — see app.js's shape ribbon/format-tab handling.
+    shapes: [],
+    // タイトル/作詞/作曲 field styling (font only — see the 図形の書式 tab)
+    // now editable the same way a shape's text is, without turning the
+    // fields themselves into shapes (score.title etc. stay the plain
+    // strings other code already depends on).
+    titleStyle: { fontFamily: 'Hiragino Sans, Yu Gothic, serif', fontSize: 22 },
+    composerStyle: { fontFamily: 'Hiragino Sans, Yu Gothic, serif', fontSize: 12 },
+    lyricistStyle: { fontFamily: 'Hiragino Sans, Yu Gothic, serif', fontSize: 12 },
     measures: Array.from({ length: DEFAULT_PAGE_MEASURE_COUNT }, () => createEmptyMeasure()),
   };
 }

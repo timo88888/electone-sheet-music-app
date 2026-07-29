@@ -33,6 +33,8 @@
     <button class="ribbon-tab" data-tab="edit">編集</button>
     <button class="ribbon-tab" data-tab="format">形式</button>
     <button class="ribbon-tab" data-tab="output">出力</button>
+    <button class="ribbon-tab" data-tab="insert">楽挿入</button>
+    <button class="ribbon-tab" id="shapeformat-tab-btn" data-tab="shapeformat" hidden>図形の書式</button>
   </div>
 
   <!-- ==================== HOME ==================== -->
@@ -148,8 +150,13 @@
       </div>
     </div>
     <div class="ribbon-group">
-      <span class="group-label">歌詞(対象小節が属する段落に表示)</span>
+      <span class="group-label">歌詞(対象小節が属する段落・五線譜に表示)</span>
       <div class="group-row">
+        <select id="lyric-part-select">
+          <option value="upper">上鍵盤</option>
+          <option value="lower">下鍵盤</option>
+          <option value="pedal">ペダル</option>
+        </select>
         <button id="btn-lyric">編集</button>
       </div>
     </div>
@@ -181,9 +188,15 @@
         <select id="articulation-select">
           <option value="">なし</option>
           <option value="staccato">スタッカート</option>
+          <option value="staccatissimo">スタッカーティッシモ</option>
           <option value="tenuto">テヌート</option>
           <option value="accent">アクセント</option>
           <option value="marcato">マルカート</option>
+          <option value="fermata">フェルマータ</option>
+          <option value="trill">トリル</option>
+          <option value="turn">ターン</option>
+          <option value="mordent">モルデント</option>
+          <option value="arpeggio">アルペジオ</option>
         </select>
       </div>
     </div>
@@ -263,7 +276,8 @@
     <div class="ribbon-group">
       <span class="group-label">書き出し</span>
       <div class="group-row">
-        <button id="btn-print">PDF書き出し/印刷</button>
+        <button id="btn-print">印刷</button>
+        <button id="btn-export-pdf">PDF書き出し</button>
         <button id="btn-export-midi">MIDI書き出し</button>
         <button id="btn-export-wav">WAV書き出し</button>
       </div>
@@ -283,6 +297,54 @@
         <button id="btn-load-template">新規作成</button>
         <input id="template-input" type="file" accept="application/json" style="display:none" />
       </div>
+    </div>
+  </div>
+
+  <!-- ==================== INSERT (shapes/textboxes) ==================== -->
+  <div class="ribbon-panel" data-panel="insert">
+    <div class="ribbon-group">
+      <span class="group-label">図形・テキストボックス(クリックして紙面上でドラッグして配置)</span>
+      <div class="group-row">
+        <button id="btn-insert-textbox" data-shape-type="textbox">テキストボックス</button>
+        <button id="btn-insert-rect" data-shape-type="rect">四角形</button>
+        <button id="btn-insert-ellipse" data-shape-type="ellipse">円</button>
+        <button id="btn-insert-line" data-shape-type="line">線</button>
+        <button id="btn-insert-arrow" data-shape-type="arrow">矢印</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SHAPE FORMAT (selected shape/title-field only) ==================== -->
+  <div class="ribbon-panel" data-panel="shapeformat">
+    <div class="ribbon-group">
+      <span class="group-label">テキスト</span>
+      <div class="group-row">
+        <select id="shape-font-family">
+          <option value="Hiragino Sans, Yu Gothic, serif">明朝/ゴシック</option>
+          <option value="Yu Gothic, sans-serif">ゴシック体</option>
+          <option value="Hiragino Mincho ProN, serif">明朝体</option>
+          <option value="Arial, sans-serif">Arial</option>
+          <option value="Georgia, serif">Georgia</option>
+        </select>
+        <label>サイズ <input id="shape-font-size" type="number" min="6" max="96" style="width:4em" /></label>
+      </div>
+    </div>
+    <div class="ribbon-group" id="shape-format-fill-group">
+      <span class="group-label">図形の書式</span>
+      <div class="group-row">
+        <label>塗り <input id="shape-fill-color" type="color" /></label>
+        <label>枠線 <input id="shape-stroke-color" type="color" /></label>
+        <label>太さ <input id="shape-stroke-width" type="number" min="0" max="20" style="width:3.5em" /></label>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">操作</span>
+      <div class="group-row">
+        <button id="btn-shape-delete">削除</button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label hint-text" id="shape-format-hint">図形またはタイトル/作詞/作曲欄をクリックして選択してください</span>
     </div>
   </div>
 

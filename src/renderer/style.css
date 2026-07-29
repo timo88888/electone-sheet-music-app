@@ -45,10 +45,13 @@ button, input, select {
 .qb-title { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #ddd; }
 .qb-title input { width: 12em; }
 .qb-measure-count { font-size: 11px; color: #bbb; white-space: nowrap; }
-.qb-bpm { display: flex; align-items: center; gap: 3px; font-size: 11px; color: #ddd; }
+.qb-bpm { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #ddd; }
 /* Wide enough (plus right padding) that a 3-digit value like "300" never
-   sits behind the number input's up/down spinner buttons. */
-.bpm-input { width: 4.2em; padding-right: 3px; }
+   sits behind the number input's own up/down spinner buttons — the native
+   spinner's rendered width varies by OS (Windows reserves noticeably more
+   than this Mac/Chromium test environment), so the padding here is sized
+   generously rather than to this environment's own measured minimum. */
+.bpm-input { width: 5.2em; padding-right: 16px; }
 .qb-sep { width: 1px; height: 16px; background: #444; }
 
 /* ---------- ribbon tabs ---------- */
@@ -122,6 +125,10 @@ button {
 }
 button:hover { background: #667082; }
 button.active { background: #1a73e8; border-color: #1a73e8; }
+/* btn-play while paused (see setPlayButtonState) — distinct from both the
+   idle gray and the playing blue, so a ▶ icon here reads as "resume from
+   where you left off" rather than "start over from the top". */
+button.paused { background: #e8871a; border-color: #e8871a; }
 
 input[type="text"], input[type="number"] {
   font-size: 12px;
@@ -333,6 +340,36 @@ input.score-header-field:hover, input.score-header-field:focus {
   width: 160px;
 }
 
+/* ---------- 楽挿入: 図形・テキストボックス (score.shapes) ---------- */
+
+.shape-el {
+  position: absolute;
+  box-sizing: border-box;
+  cursor: move;
+}
+.shape-el.selected { outline: 1px dashed #1a73e8; outline-offset: 2px; }
+.shape-text {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  padding: 2px 4px;
+  color: #222;
+  cursor: text;
+  outline: none;
+}
+.shape-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #1a73e8;
+  border: 1px solid #fff;
+  border-radius: 50%;
+}
+.shape-handle-nw { top: -4px; left: -4px; cursor: nwse-resize; }
+.shape-handle-ne { top: -4px; right: -4px; cursor: nesw-resize; }
+.shape-handle-sw { bottom: -4px; left: -4px; cursor: nesw-resize; }
+.shape-handle-se { bottom: -4px; right: -4px; cursor: nwse-resize; }
+
 /* 譜面全体の幅調整スライダー (形式タブ) — PPTで表の幅をドラッグするのと同じ
    感覚で、つまみを左右にドラッグして score.measureWidthScale を変える。 */
 .width-slider-track {
@@ -379,6 +416,8 @@ input.score-header-field:hover, input.score-header-field:focus {
 }
 .context-menu-item:hover { background: #1a73e8; }
 .context-menu-item.active { color: #7ab8ff; font-weight: bold; }
+.context-menu-item.has-submenu { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.context-menu-item.has-submenu::after { content: '\25b8'; font-size: 11px; color: #999; }
 .context-menu-header {
   padding: 4px 14px;
   font-size: 10px;

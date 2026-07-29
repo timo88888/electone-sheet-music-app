@@ -1,19 +1,47 @@
 import {
   Renderer, Stave, StaveNote, StaveConnector, Voice, Formatter, Dot, Beam,
   BarlineType, StaveTie, Curve, StaveHairpin, Annotation, AnnotationVerticalJustify, Accidental,
-  Articulation, Tuplet,
+  Articulation, Tuplet, Ornament, Stroke,
 } from '../../node_modules/vexflow/build/esm/entry/vexflow.js';
 import {
   PARTS, measureCapacity, getClef, REST_ANCHOR_KEY, noteBeats, keySignatureAccidentalCount,
   tupletNotesOccupied,
 } from './scoreModel.js';
+import { parseKey } from './pitchMap.js';
 
+// 単音の音符に付く「アーティキュレーション」記号(note.articulation) —
+// VexFlowのArticulation(音符に直接付くグリフ)/Ornament(装飾音)/Stroke(和音の
+// アルペジオ)のうち、どれで描画するかをコード表から振り分ける(下の
+// addArticulationModifier参照)。ピアノ・エレクトーンで一般的に使うものだけに
+// 絞ってある。
 const ARTICULATION_CODES = {
   staccato: 'a.',
+  staccatissimo: 'av',
   tenuto: 'a-',
   accent: 'a>',
   marcato: 'a^',
+  fermata: 'a@a',
 };
+const ORNAMENT_CODES = {
+  trill: 'tr',
+  turn: 'turn',
+  mordent: 'mordent',
+};
+const ARPEGGIO_ARTICULATION = 'arpeggio';
+
+// Attaches note.articulation to vfNote, picking whichever VexFlow modifier
+// class actually renders that code — a plain articulation glyph (staccato,
+// fermata, ...), a stem-attached ornament (trill, turn, mordent), or an
+// arpeggio wavy line across the whole chord (Stroke, not tied to one key).
+function addArticulationModifier(vfNote, articulation) {
+  if (ARTICULATION_CODES[articulation]) {
+    vfNote.addModifier(new Articulation(ARTICULATION_CODES[articulation]), 0);
+  } else if (ORNAMENT_CODES[articulation]) {
+    vfNote.addModifier(new Ornament(ORNAMENT_CODES[articulation]), 0);
+  } else if (articulation === ARPEGGIO_ARTICULATION) {
+    vfNote.addModifier(new Stroke(Stroke.Type.ARPEGGIO_DIRECTIONLESS), 0);
+  }
+}
 
 // Placeholder rests auto-inserted by the N連符 ribbon flow (see app.js's
 // insertNote) render in this color so they're obviously "fill me in",
@@ -36,12 +64,16 @@ export const LAYOUT = {
   // ledger lines plus dynamics/lyric text hanging below the pedal stave.
   systemGap: 80,
   topMargin: 110,
-  // Tight band right above the stave itself, holding コード text and
-  // リハーサル/レジストレーション boxes together on one line (see
-  // renderScore's per-note mark drawing) — the exact slot the measure
-  // number used to occupy. Priority when they'd collide is コード, then
+  // Band holding コード text and リハーサル/レジストレーション boxes, one line
+  // above the stave (see renderScore's per-note mark drawing). Sized so the
+  // band's own bottom edge clears the treble clef's tip instead of sitting
+  // right against the staff — a clef's swirl reaches noticeably above the
+  // top line, and a tall upper-staff note's ledger lines can reach up nearly
+  // as far, so drawPerNoteMarks also treats those ledger-line notes as
+  // obstacles the same way it treats a neighboring mark (see
+  // upperNoteObstacles). Priority when marks would collide is コード, then
   // リハーサル, then レジストレーション — later ones shift right.
-  rehearsalBandHeight: 18,
+  rehearsalBandHeight: 34,
   // Now below the pedal stave (moved off the top of the system) — see
   // renderMeasureNumbers in app.js.
   measureNumberHeight: 14,
@@ -91,6 +123,79 @@ function measureNominalWidth(measure, avgCount, scale) {
   const density = Math.sqrt(measureNoteCount(measure) / avgCount);
   const factor = Math.max(0.72, Math.min(1.4, 0.5 + 0.5 * density));
   return REFERENCE_MEASURE_WIDTH * scale * factor;
+}
+
+// A staff is 4 line-to-line gaps tall (10px each, VexFlow's default), and
+// indexForPitch's index units are half of that (one diatonic step per unit —
+// a note on the bottom line sits at index 8, one in the space above the top
+// line at index -1, and so on).
+const STAVE_HEIGHT_PX = 40;
+const INDEX_STEP_PX = 5;
+// A little extra room beyond the bare minimum so a ledger line doesn't sit
+// pixel-adjacent to the next staff's own top/bottom line.
+const STAVE_GAP_SAFETY_INDEX_UNITS = 2;
+
+// Diatonic index (0 = the stave's top line, +1 per half-step down) for any
+// pitch, above or below the stave — unlike pitchMap.js's own indexForPitch,
+// which only searches downward from the clef's top line and so can't
+// resolve a pitch ABOVE it (exactly what 下鍵盤/ペダル's high notes need
+// here). LETTER_ORDER matches pitchMap.js's own LETTERS cycle (C..B).
+const LETTER_ORDER = {
+  C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6,
+};
+const CLEF_TOP_LINE = {
+  treble: { letter: 'F', octave: 5 },
+  bass: { letter: 'A', octave: 3 },
+};
+function diatonicIndex(clef, key) {
+  const { letter, octave } = parseKey(key);
+  const top = CLEF_TOP_LINE[clef];
+  const topPos = top.octave * 7 + LETTER_ORDER[top.letter];
+  const pos = octave * 7 + LETTER_ORDER[letter.toUpperCase()];
+  return topPos - pos;
+}
+
+// How far below (positive) or above (positive) the stave a pitch's ledger
+// lines reach, in diatonicIndex's index units (0 at the relevant line).
+function ledgerReachBelow(clef, key) {
+  return Math.max(0, diatonicIndex(clef, key) - 8);
+}
+function ledgerReachAbove(clef, key) {
+  return Math.max(0, -diatonicIndex(clef, key));
+}
+
+// Scans every note in the score once to find the tallest mutual intrusion
+// between adjacent staves — 上鍵盤's lowest ledger lines reaching down vs.
+// 下鍵盤's highest reaching up, and the same for 下鍵盤/ペダル — and widens
+// staveGap just enough to clear the worse of the two, uniformly for every
+// system in the piece (never narrower than the layout's own default, and the
+// same single gap is used for both stave pairs — see the caller in
+// renderScore, which shares one `staveGap` for every idx*staveGap offset).
+function computeRequiredStaveGap(score, baseStaveGap) {
+  let upperReachBelow = 0;
+  let lowerReachAbove = 0;
+  let lowerReachBelow = 0;
+  let pedalReachAbove = 0;
+  score.measures.forEach((measure) => {
+    PARTS.forEach((part) => {
+      const clef = getClef(score, part);
+      (measure[part] || []).forEach((n) => {
+        if (n.isRest) return;
+        n.keys.forEach((tone) => {
+          if (part === 'upper') upperReachBelow = Math.max(upperReachBelow, ledgerReachBelow(clef, tone.key));
+          if (part === 'lower') {
+            lowerReachAbove = Math.max(lowerReachAbove, ledgerReachAbove(clef, tone.key));
+            lowerReachBelow = Math.max(lowerReachBelow, ledgerReachBelow(clef, tone.key));
+          }
+          if (part === 'pedal') pedalReachAbove = Math.max(pedalReachAbove, ledgerReachAbove(clef, tone.key));
+        });
+      });
+    });
+  });
+  const upperLowerUnits = upperReachBelow + lowerReachAbove + STAVE_GAP_SAFETY_INDEX_UNITS;
+  const lowerPedalUnits = lowerReachBelow + pedalReachAbove + STAVE_GAP_SAFETY_INDEX_UNITS;
+  const neededPx = Math.max(upperLowerUnits, lowerPedalUnits) * INDEX_STEP_PX;
+  return Math.max(baseStaveGap, STAVE_HEIGHT_PX + neededPx);
 }
 
 // Groups measure indices into lines by GREEDILY packing them left to right
@@ -192,8 +297,8 @@ function buildStaveNotes(measure, part, clef) {
         n.keys.forEach((_, idx) => vfNote.setKeyStyle(idx, { fillStyle: '#9c27b0', strokeStyle: '#9c27b0' }));
       }
     }
-    if (n.articulation && ARTICULATION_CODES[n.articulation]) {
-      vfNote.addModifier(new Articulation(ARTICULATION_CODES[n.articulation]), 0);
+    if (n.articulation) {
+      addArticulationModifier(vfNote, n.articulation);
     }
     if (n.dynamic) {
       // dynamics conventionally sit below the staff
@@ -279,6 +384,19 @@ function strokeBox(ctx, x, y, w, h) {
   ctx.stroke();
 }
 
+// 4/4 and 2/2 can each be shown either as digits or as their traditional
+// symbol (common time "C" / alla breve "C|", both built into VexFlow's own
+// TimeSignature glyph set) — score.timeSigDisplay is the user's toggle (see
+// onPageMouseDown's timeSigHitMap click handling), and only actually changes
+// anything for those two specific signatures; anything else has no symbol
+// form and always shows as digits regardless of the toggle's state.
+function timeSigGlyph(score) {
+  if (score.timeSigDisplay !== 'symbol') return score.timeSig;
+  if (score.timeSig === '4/4') return 'C';
+  if (score.timeSig === '2/2') return 'C|';
+  return score.timeSig;
+}
+
 function textWidthAt(ctx, text, size) {
   ctx.save();
   ctx.setFont('Arial', size, '');
@@ -341,7 +459,21 @@ function drawPerNoteMarks({
     return cx;
   };
 
-  const placedChord = [];
+  // A 上鍵盤 note with enough ledger lines can reach up as high as the mark
+  // band itself — those notes always keep their position/spelling, so a mark
+  // that would land on top of one shifts sideways instead (same shiftPast
+  // mechanism used for two marks that would otherwise collide with each
+  // other). Only 上鍵盤 is checked: 下鍵盤/ペダル sit further down the system,
+  // well clear of this band regardless of how high their own notes reach.
+  const bandBottomY = boxY + MARK_BOX_HEIGHT + 3;
+  const upperNoteObstacles = (notesHitByPart.upper || [])
+    .filter((hit) => hit.noteRef && !hit.noteRef.isRest && Math.min(...(hit.ys || [hit.y])) <= bandBottomY)
+    .map((hit) => {
+      const xs = hit.xs || [hit.x];
+      return { x0: Math.min(...xs) - 4, x1: Math.max(...xs) + 4 };
+    });
+
+  const placedChord = [...upperNoteObstacles];
   (notesHitByPart.lower || []).forEach((entry) => {
     const note = entry.noteRef;
     if (!note || note.isRest || !note.chord) return;
@@ -401,12 +533,18 @@ export function renderScore(container, score, layout = LAYOUT) {
   const hitMap = [];
   const annotationHitMap = [];
   const markHitMap = [];
+  const timeSigHitMap = [];
   const pages = [];
 
   const {
-    linesPerPage, pageWidth, pageHeight, pageMargin, staveGap, systemGap, topMargin,
+    linesPerPage, pageWidth, pageHeight, pageMargin, systemGap, topMargin,
     rehearsalBandHeight, measureNumberHeight, clefExtraWidth, timeSigExtraWidth, titleHeaderHeight,
   } = layout;
+  // Widened beyond layout's own default when a 上鍵盤 note's ledger lines
+  // reaching down would otherwise collide with a 下鍵盤 note's reaching up
+  // (or the same for 下鍵盤/ペダル) — see computeRequiredStaveGap. Applied
+  // uniformly to every system in the score, never just the offending one.
+  const staveGap = computeRequiredStaveGap(score, layout.staveGap);
 
   const lines = computeLines(score, layout);
   const totalLines = lines.length;
@@ -503,6 +641,7 @@ export function renderScore(container, score, layout = LAYOUT) {
 
       let colX = pageMargin;
       let linePedalStave = null;
+      const lineStaves = { upper: null, lower: null, pedal: null };
       measureIndices.forEach((m, colIndex) => {
         const isFirstOfLine = colIndex === 0;
         const measureWidth = isFirstOfLine ? widths[colIndex] + firstColExtra : widths[colIndex];
@@ -517,13 +656,28 @@ export function renderScore(container, score, layout = LAYOUT) {
           if (isFirstOfLine) {
             stave.addClef(getClef(score, part));
             if (score.keySignature && score.keySignature !== 'C') stave.addKeySignature(score.keySignature);
-            if (m === 0) stave.addTimeSignature(score.timeSig);
+            if (m === 0) stave.addTimeSignature(timeSigGlyph(score));
           }
           applyBarlines(stave, measure);
           stave.setContext(ctx).draw();
           staves[part] = stave;
+          if (m === 0) {
+            // Click target for toggling 4/4↔C / 2/2↔¢ (see onPageMouseDown in
+            // app.js) — captured on every part's own copy of the glyph so it
+            // doesn't matter which staff the user clicks it on.
+            const timeSigMod = stave.getModifiers().find((mod) => mod.getCategory() === 'TimeSignature');
+            if (timeSigMod) {
+              const bbox = timeSigMod.getBoundingBox();
+              timeSigHitMap.push({
+                page, measureIndex: m, part, x0: bbox.getX(), x1: bbox.getX() + bbox.getW(), y0: y - 10, y1: y + 50,
+              });
+            }
+          }
         });
         linePedalStave = staves.pedal;
+        lineStaves.upper = staves.upper;
+        lineStaves.lower = staves.lower;
+        lineStaves.pedal = staves.pedal;
 
         if (isFirstOfLine) {
           const brace = new StaveConnector(staves.upper, staves.pedal).setType('brace');
@@ -709,18 +863,36 @@ export function renderScore(container, score, layout = LAYOUT) {
         });
       });
 
-      // 歌詞 — one line of text per system, at a consistent height below the
-      // pedal stave (below the measure number), regardless of which specific
+      // 歌詞 — one line of text per system *per staff* (上鍵盤/下鍵盤/ペダル
+      // each shown near their own stave), regardless of which specific
       // measure on this line it was set from (see targetMeasure's 対象小節).
-      const lineLyric = measureIndices.map((m) => score.measures[m].lyric).find((t) => t);
-      if (lineLyric && linePedalStave) {
-        const lyricY = linePedalStave.getBottomLineY() + measureNumberHeight + 10;
+      // 上鍵盤/下鍵盤 sit just below their own bottom line, in the gap before
+      // the next stave down; ペダル keeps its previous spot below the measure
+      // number, since there's no further stave below it to make room in.
+      ['upper', 'lower', 'pedal'].forEach((part) => {
+        const lineLyric = measureIndices.map((m) => score.measures[m].lyrics[part]).find((t) => t);
+        const stave = lineStaves[part];
+        if (!lineLyric || !stave) return;
+        const lyricY = part === 'pedal'
+          ? stave.getBottomLineY() + measureNumberHeight + 10
+          : stave.getBottomLineY() + 14;
         ctx.save();
         ctx.setFont('Arial', 11, '');
         ctx.fillText(lineLyric, pageMargin, lyricY);
         ctx.restore();
-      }
+      });
     }
+
+    // ページ番号 — bottom-center of every page, on by default (hidden
+    // nowhere — unlike the measure-number labels/ribbon this is meant to
+    // print, so it's drawn straight into the page's own canvas rather than
+    // as a DOM overlay app.js would have to remember to exclude from print).
+    ctx.save();
+    ctx.setFont('Arial', 10, '');
+    const pageNumberText = String(page + 1);
+    const pageNumberWidth = textWidthAt(ctx, pageNumberText, 10);
+    ctx.fillText(pageNumberText, (pageWidth - pageNumberWidth) / 2, pageHeight - pageMargin / 2);
+    ctx.restore();
   }
 
   // Now that every note on every page has a built vfNote (builtByNoteId),
@@ -798,7 +970,7 @@ export function renderScore(container, score, layout = LAYOUT) {
   });
 
   return {
-    hitMap, annotationHitMap, markHitMap, pages, totalPages,
+    hitMap, annotationHitMap, markHitMap, timeSigHitMap, pages, totalPages,
   };
 }
 
