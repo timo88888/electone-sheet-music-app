@@ -391,6 +391,43 @@ function drawPartialHairpin(ctx, note, kind, isOutgoing) {
   ctx.closePath();
 }
 
+// VexFlow has no dedicated Glissando modifier (only StaveTie/Curve/
+// StaveHairpin), so a グリッサンド is drawn by hand as a straight line
+// between two noteheads plus a small "gliss." label — same free-hand
+// approach as drawPartialHairpin above.
+function noteHeadPosition(vfNote, keyIndex) {
+  const ys = vfNote.getYs();
+  const xs = vfNote.noteHeads ? vfNote.noteHeads.map((nh) => nh.getAbsoluteX()) : null;
+  const y = ys[keyIndex] !== undefined ? ys[keyIndex] : ys[0];
+  const x = xs && xs[keyIndex] !== undefined ? xs[keyIndex] : vfNote.getAbsoluteX();
+  return { x, y };
+}
+
+function drawGlissandoLine(ctx, a, b) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.closePath();
+  ctx.setFont('Arial', 9, 'italic');
+  ctx.fillText('gliss.', (a.x + b.x) / 2 - 10, (a.y + b.y) / 2 - 4);
+  ctx.restore();
+}
+
+// A link crossing a system break has no note to draw the second endpoint
+// from — same problem drawPartialHairpin solves for hairpins — so it's split
+// into two segments, each running from the real note out to its own stave's
+// edge.
+function drawPartialGlissando(ctx, vfNote, keyIndex, isOutgoing) {
+  const stave = vfNote.checkStave();
+  const { x, y } = noteHeadPosition(vfNote, keyIndex);
+  const edgeX = isOutgoing ? stave.getTieEndX() : stave.getTieStartX();
+  const notePoint = { x, y };
+  const edgePoint = { x: edgeX, y };
+  drawGlissandoLine(ctx, isOutgoing ? notePoint : edgePoint, isOutgoing ? edgePoint : notePoint);
+}
+
 const MARK_BOX_HEIGHT = 15;
 const MARK_BOX_PAD_X = 5;
 const MARK_BOX_GAP = 4;
@@ -462,6 +499,45 @@ function findAnchorForBeat(measure, notesHitByPart, beat) {
     }
   }
   return null;
+}
+
+// Height reserved for 1番括弧/2番括弧 etc. above the chord/リハーサル/
+// レジストレーション band — only added to a system's own slot when the score
+// actually has one (see hasVolta in renderScore).
+const VOLTA_BAND_HEIGHT = 20;
+
+// n番括弧 (repeat-ending brackets) — measure.volta = { number, span } marks
+// the FIRST measure of a span-measures-long bracket labelled "N.". Only
+// measures actually on this line get drawn; a bracket whose span runs past
+// the line's last measure (crossing a system break) just draws without its
+// closing downward tick, reading as "continues" rather than abruptly ending
+// mid-air — same convention printed scores use.
+function drawVoltaBrackets(ctx, score, measureIndices, measureColumns, lineY) {
+  const y = lineY + 4;
+  const tickHeight = 7;
+  measureIndices.forEach((m) => {
+    const measure = score.measures[m];
+    if (!measure.volta) return;
+    const startCol = measureColumns[m];
+    if (!startCol) return;
+    const endIndex = m + measure.volta.span - 1;
+    const lastOnLine = measureIndices[measureIndices.length - 1];
+    const clippedEndIndex = Math.min(endIndex, lastOnLine);
+    const endCol = measureColumns[clippedEndIndex];
+    if (!endCol) return;
+    const x0 = startCol.x;
+    const x1 = endCol.x + endCol.width;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x0, y + tickHeight);
+    ctx.lineTo(x0, y);
+    ctx.lineTo(x1, y);
+    if (clippedEndIndex === endIndex) ctx.lineTo(x1, y + tickHeight);
+    ctx.stroke();
+    ctx.setFont('Arial', 11, '');
+    ctx.fillText(`${measure.volta.number}.`, x0 + 4, y + 11);
+    ctx.restore();
+  });
 }
 
 // Draws this measure's per-note/per-beat annotations once every part's note
@@ -571,6 +647,13 @@ export function renderScore(container, score, layout = LAYOUT) {
   // uniformly to every system in the score, never just the offending one.
   const staveGapInfo = computeRequiredStaveGap(score, layout.staveGap);
   const staveGap = staveGapInfo.gap;
+  // 1番括弧/2番括弧 etc. (see drawVoltaBrackets) need their own row above the
+  // existing chord/リハーサル/レジストレーション band — reserved only when the
+  // score actually uses one, so scores that don't stay exactly as tight to
+  // the clef as they were tuned to be (see rehearsalBandHeight's own
+  // comment).
+  const hasVolta = score.measures.some((m) => m.volta);
+  const voltaOffset = hasVolta ? VOLTA_BAND_HEIGHT : 0;
 
   const lines = computeLines(score, layout);
   const totalLines = lines.length;
@@ -614,6 +697,21 @@ export function renderScore(container, score, layout = LAYOUT) {
       });
     });
   });
+  const glissandoLinks = [];
+  noteById.forEach((n) => {
+    if (n.isRest) return;
+    n.keys.forEach((tone, keyIndex) => {
+      if (!tone.glissandoTo) return;
+      const targetNote = noteById.get(tone.glissandoTo.noteId);
+      const targetKeyIndex = targetNote && targetNote.keys.findIndex(
+        (t) => pitchId(t.key) === tone.glissandoTo.pitchKey,
+      );
+      if (!targetNote || targetKeyIndex === -1) return; // dangling — target note/pitch no longer exists
+      glissandoLinks.push({
+        from: { noteId: n.id, keyIndex }, to: { noteId: tone.glissandoTo.noteId, keyIndex: targetKeyIndex },
+      });
+    });
+  });
 
   for (let page = 0; page < totalPages; page++) {
     const pageTitleExtra = page === 0 ? titleHeaderHeight : 0;
@@ -638,8 +736,9 @@ export function renderScore(container, score, layout = LAYOUT) {
 
     for (let line = lineStart; line < lineEnd; line++) {
       const measureIndices = lines[line];
-      const lineY = topMargin + pageTitleExtra + (line - lineStart) * (staveGap * 2 + systemGap + rehearsalBandHeight);
-      const staveTopY = lineY + rehearsalBandHeight;
+      const lineY = topMargin + pageTitleExtra
+        + (line - lineStart) * (staveGap * 2 + systemGap + rehearsalBandHeight + voltaOffset);
+      const staveTopY = lineY + voltaOffset + rehearsalBandHeight;
       const availableWidth = pageWidth - pageMargin * 2;
       const keySigWidth = keySignatureExtraWidth(score, layout);
       // The first column of every line carries a clef and key signature (and,
@@ -668,11 +767,13 @@ export function renderScore(container, score, layout = LAYOUT) {
       let colX = pageMargin;
       let linePedalStave = null;
       const lineStaves = { upper: null, lower: null, pedal: null };
+      const measureColumns = {}; // measureIndex -> { x, width } — see drawVoltaBrackets
       measureIndices.forEach((m, colIndex) => {
         const isFirstOfLine = colIndex === 0;
         const measureWidth = isFirstOfLine ? widths[colIndex] + firstColExtra : widths[colIndex];
         const x = colX;
         colX += measureWidth;
+        measureColumns[m] = { x, width: measureWidth };
         const measure = score.measures[m];
 
         const staves = {};
@@ -681,7 +782,12 @@ export function renderScore(container, score, layout = LAYOUT) {
           const stave = new Stave(x, y, measureWidth);
           if (isFirstOfLine) {
             stave.addClef(getClef(score, part));
-            if (score.keySignature && score.keySignature !== 'C') stave.addKeySignature(score.keySignature);
+            // Checked by accidental count, not by comparing to the literal
+            // string 'C' — 'Am' (relative minor, also 0 accidentals) would
+            // otherwise still call addKeySignature for no reason.
+            if (score.keySignature && keySignatureAccidentalCount(score.keySignature) > 0) {
+              stave.addKeySignature(score.keySignature);
+            }
             if (m === 0) stave.addTimeSignature(timeSigGlyph(score));
           }
           applyBarlines(stave, measure);
@@ -894,11 +1000,15 @@ export function renderScore(container, score, layout = LAYOUT) {
           measureIndex: m,
           measure,
           notesHitByPart,
-          boxY: lineY + 2,
+          boxY: lineY + voltaOffset + 2,
           markHitMap,
           showChordSymbols: score.showChordSymbols !== false,
         });
       });
+
+      if (hasVolta) {
+        drawVoltaBrackets(ctx, score, measureIndices, measureColumns, lineY);
+      }
 
       // 歌詞 — one line of text per system *per staff* (上鍵盤/下鍵盤/ペダル
       // each shown near their own stave), regardless of which specific
@@ -960,6 +1070,25 @@ export function renderScore(container, score, layout = LAYOUT) {
     }
   });
 
+  // Same idea for グリッサンド links.
+  glissandoLinks.forEach(({ from, to }) => {
+    const a = builtByNoteId.get(from.noteId);
+    const b = builtByNoteId.get(to.noteId);
+    if (!a || !b) return; // shouldn't happen — both were confirmed to exist above
+    if (a.line === b.line) {
+      deferredMarks.push({
+        type: 'glissando', a: a.vfNote, b: b.vfNote, aIndex: from.keyIndex, bIndex: to.keyIndex, ctx: b.ctx,
+      });
+    } else {
+      deferredMarks.push({
+        type: 'glissando-partial', note: a.vfNote, keyIndex: from.keyIndex, outgoing: true, ctx: a.ctx,
+      });
+      deferredMarks.push({
+        type: 'glissando-partial', note: b.vfNote, keyIndex: to.keyIndex, outgoing: false, ctx: b.ctx,
+      });
+    }
+  });
+
   // Two tones of the same chord tied to the next chord produce two separate
   // 'tie' deferredMarks entries with the same (a, b) note pair — issuing one
   // StaveTie per tone (each with its own single-element firstIndices/
@@ -1009,6 +1138,12 @@ export function renderScore(container, score, layout = LAYOUT) {
       new StaveHairpin({ firstNote: mark.a, lastNote: mark.b }, type).setContext(mark.ctx).draw();
     } else if (mark.type === 'hairpin-partial') {
       drawPartialHairpin(mark.ctx, mark.note, mark.kind, mark.outgoing);
+    } else if (mark.type === 'glissando') {
+      drawGlissandoLine(
+        mark.ctx, noteHeadPosition(mark.a, mark.aIndex), noteHeadPosition(mark.b, mark.bIndex),
+      );
+    } else if (mark.type === 'glissando-partial') {
+      drawPartialGlissando(mark.ctx, mark.note, mark.keyIndex, mark.outgoing);
     }
   });
 

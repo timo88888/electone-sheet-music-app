@@ -33,13 +33,19 @@
     <button class="ribbon-tab" data-tab="marks">記号</button>
     <button class="ribbon-tab" data-tab="edit">編集</button>
     <button class="ribbon-tab" data-tab="format">表示</button>
-    <button class="ribbon-tab" data-tab="output">出力</button>
+    <button class="ribbon-tab" data-tab="output">ファイル</button>
     <button class="ribbon-tab" data-tab="insert">挿入</button>
     <button class="ribbon-tab" id="shapeformat-tab-btn" data-tab="shapeformat" hidden>図形の書式</button>
   </div>
 
   <!-- ==================== HOME ==================== -->
   <div class="ribbon-panel active" data-panel="home">
+    <div class="ribbon-group">
+      <span class="group-label">調号</span>
+      <div class="group-row">
+        <select id="keysig-select"></select>
+      </div>
+    </div>
     <div class="ribbon-group">
       <span class="group-label">音符</span>
       <div class="group-row">
@@ -74,6 +80,7 @@
       <div class="group-row">
         <button data-tone-action="tie" title="タイ:選択中の音符から、次の同じ高さの音符へタイをつなげます。次に同じ高さの音がなければ自動で追加します" class="icon-btn">タイ</button>
         <button data-tone-action="slur" title="スラー:選択中の音符でクリックした後、スラーの終わりにしたい音符をクリックしてください" class="icon-btn">スラー</button>
+        <button data-tone-action="glissando" title="グリッサンド:選択中の音符でクリックした後、グリッサンドの終わりにしたい音符をクリックしてください" class="icon-btn">グリッサンド</button>
       </div>
     </div>
     <div class="ribbon-group">
@@ -94,12 +101,6 @@
         <input id="timesig-input" type="text" style="width:4em" />
         <button id="btn-apply-timesig">適用</button>
         <label>弱起拍数(0=なし) <input id="pickup-input" type="number" min="0" max="8" step="0.5" style="width:4em" /></label>
-      </div>
-    </div>
-    <div class="ribbon-group">
-      <span class="group-label">調号</span>
-      <div class="group-row">
-        <select id="keysig-select"></select>
       </div>
     </div>
     <div class="ribbon-group">
@@ -232,6 +233,20 @@
         <span id="range-selection-label" class="range-label">未選択</span>
         <button id="btn-range-copy">コピー</button>
         <button id="btn-range-delete">まとめて削除</button>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">n番括弧(範囲選択した小節に適用)</span>
+      <div class="group-row">
+        <select id="volta-number-select">
+          <option value="1">1番</option>
+          <option value="2">2番</option>
+          <option value="3">3番</option>
+          <option value="4">4番</option>
+          <option value="5">5番</option>
+        </select>
+        <button id="btn-volta-apply">適用</button>
+        <button id="btn-volta-clear">解除</button>
       </div>
     </div>
     <div class="ribbon-group">
@@ -381,6 +396,7 @@
       <div class="group-row">
         <button data-tone-action="tie" title="タイ" class="icon-btn">タイ</button>
         <button data-tone-action="slur" title="スラー" class="icon-btn">スラー</button>
+        <button data-tone-action="glissando" title="グリッサンド" class="icon-btn">グリッサンド</button>
       </div>
       <div class="group-row">
         <button data-link="tuplet3" title="三連符" class="icon-btn">3連符</button>
@@ -434,6 +450,16 @@
       <div class="modal-actions">
         <button id="chord-modal-cancel">キャンセル</button>
         <button id="chord-modal-ok" class="modal-primary">OK</button>
+      </div>
+    </div>
+  </div>
+  <div id="close-confirm-modal" class="modal-overlay" hidden>
+    <div class="modal-box">
+      <div class="modal-title">変更を保存しますか？</div>
+      <div class="modal-actions">
+        <button id="close-confirm-cancel">キャンセル</button>
+        <button id="close-confirm-discard">保存せずに終了</button>
+        <button id="close-confirm-save" class="modal-primary">保存して終了</button>
       </div>
     </div>
   </div>

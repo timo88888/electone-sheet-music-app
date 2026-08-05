@@ -210,6 +210,23 @@ label { font-size: 11px; color: #eee; display: flex; align-items: center; gap: 3
   pointer-events: none;
 }
 
+/* Note-insertion caret (see insertCaret in app.js) — a first click on empty
+   staff space plants this instead of inserting right away; a second click
+   near the same spot confirms. Blinks like a text cursor so it reads as
+   "waiting for confirmation", not as a note that's already there. */
+.insert-caret {
+  position: absolute;
+  width: 2px;
+  height: 40px;
+  background: #1a73e8;
+  pointer-events: none;
+  animation: insert-caret-blink 1s step-end infinite;
+}
+@keyframes insert-caret-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
 /* Overlay marking whichever note(s) are sounding right now during playback —
    a distinct hot color so it doesn't get confused with the (blue) range
    selection or the (orange) tie/slur/tuplet placeholder rests. */

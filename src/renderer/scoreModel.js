@@ -84,20 +84,37 @@ export const BARLINE_LABELS = {
 // Major-key signatures only (a minor key shares its relative major's
 // signature, so this covers both) — value is the VexFlow key spec passed to
 // Stave.addKeySignature().
+// Each major key is immediately followed by its relative minor (same
+// accidentals — a key signature doesn't distinguish them, only the tonic
+// does) using VexFlow's own minor key specs ('Am', 'Em', ...), which
+// Stave.addKeySignature() already recognizes directly.
 export const KEY_SIGNATURES = [
   { value: 'C', label: 'ハ長調(♯♭なし)', accidentals: 0, type: null },
+  { value: 'Am', label: 'イ短調(♯♭なし)', accidentals: 0, type: null },
   { value: 'G', label: 'ト長調(♯1)', accidentals: 1, type: 'sharp' },
+  { value: 'Em', label: 'ホ短調(♯1)', accidentals: 1, type: 'sharp' },
   { value: 'D', label: 'ニ長調(♯2)', accidentals: 2, type: 'sharp' },
+  { value: 'Bm', label: 'ロ短調(♯2)', accidentals: 2, type: 'sharp' },
   { value: 'A', label: 'イ長調(♯3)', accidentals: 3, type: 'sharp' },
+  { value: 'F#m', label: '嬰ヘ短調(♯3)', accidentals: 3, type: 'sharp' },
   { value: 'E', label: 'ホ長調(♯4)', accidentals: 4, type: 'sharp' },
+  { value: 'C#m', label: '嬰ハ短調(♯4)', accidentals: 4, type: 'sharp' },
   { value: 'B', label: 'ロ長調(♯5)', accidentals: 5, type: 'sharp' },
+  { value: 'G#m', label: '嬰ト短調(♯5)', accidentals: 5, type: 'sharp' },
   { value: 'F#', label: '嬰ヘ長調(♯6)', accidentals: 6, type: 'sharp' },
+  { value: 'D#m', label: '嬰ニ短調(♯6)', accidentals: 6, type: 'sharp' },
   { value: 'F', label: 'ヘ長調(♭1)', accidentals: 1, type: 'flat' },
+  { value: 'Dm', label: 'ニ短調(♭1)', accidentals: 1, type: 'flat' },
   { value: 'Bb', label: '変ロ長調(♭2)', accidentals: 2, type: 'flat' },
+  { value: 'Gm', label: 'ト短調(♭2)', accidentals: 2, type: 'flat' },
   { value: 'Eb', label: '変ホ長調(♭3)', accidentals: 3, type: 'flat' },
+  { value: 'Cm', label: 'ハ短調(♭3)', accidentals: 3, type: 'flat' },
   { value: 'Ab', label: '変イ長調(♭4)', accidentals: 4, type: 'flat' },
+  { value: 'Fm', label: 'ヘ短調(♭4)', accidentals: 4, type: 'flat' },
   { value: 'Db', label: '変ニ長調(♭5)', accidentals: 5, type: 'flat' },
+  { value: 'Bbm', label: '変ロ短調(♭5)', accidentals: 5, type: 'flat' },
   { value: 'Gb', label: '変ト長調(♭6)', accidentals: 6, type: 'flat' },
+  { value: 'Ebm', label: '変ホ短調(♭6)', accidentals: 6, type: 'flat' },
 ];
 
 export function keySignatureAccidentalCount(key) {
@@ -175,6 +192,10 @@ export function createEmptyMeasure() {
     // rows) — set via targetMeasure()'s "対象小節" input plus the 歌詞 ribbon
     // group's staff select.
     lyrics: { upper: '', lower: '', pedal: '' },
+    // n番括弧(volta/repeat-ending bracket) — set only on the FIRST measure
+    // of the bracket's span; { number: 1-5, span: how many measures
+    // (including this one) the bracket covers }. null everywhere else.
+    volta: null,
   };
 }
 

@@ -6,4 +6,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 // PDF export button (see app.js's btn-export-pdf) needs.
 contextBridge.exposeInMainWorld('electronAPI', {
   exportPdf: (defaultFileName) => ipcRenderer.invoke('export-pdf', defaultFileName),
+  // Close-confirmation flow: main.js intercepts the window's close button and
+  // asks the renderer (which alone knows whether there are unsaved changes)
+  // before actually closing — see main.js's 'close' handler and app.js's
+  // onCloseRequested handler.
+  onCloseRequested: (callback) => ipcRenderer.on('close-requested', callback),
+  respondClose: (action) => ipcRenderer.send('close-response', action),
 });

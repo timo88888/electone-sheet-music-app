@@ -12,7 +12,7 @@ import {
   pitchForIndex, indexForY, transposeKey, parseKey, buildKey,
 } from './pitchMap.js';
 import {
-  Player, renderScoreToWavBuffer, buildPlaybackEvents, PLAYBACK_LEAD, DEFAULT_INSTRUMENT,
+  Player, renderScoreToWavBuffer, buildPlaybackEvents, PLAYBACK_LEAD, DEFAULT_INSTRUMENT, pitchToMidi,
 } from './playback.js';
 import { buildMidiFile } from './midiExport.js';
 import { getSoundfontNames } from '../../node_modules/smplr/dist/index.mjs';
@@ -62,6 +62,7 @@ function migrateScore(loaded) {
     // shared value most often belonged to the melody, so it lands on 上鍵盤.
     if (!measure.lyrics) measure.lyrics = { upper: measure.lyric || '', lower: '', pedal: '' };
     delete measure.lyric;
+    if (measure.volta === undefined) measure.volta = null;
     // コード used to live on the measure; now it's per-note. Best-effort
     // carry the old per-measure value onto the first 下鍵盤 note (a
     // hand-typed chord existed only because someone entered it, so treat it
@@ -105,12 +106,15 @@ function migrateScore(loaded) {
     PARTS.forEach((part) => {
       (measure[part] || []).forEach((n) => {
         if (n.keys && n.keys.length && typeof n.keys[0] === 'string') {
-          n.keys = n.keys.map((k) => ({ key: k, tieToNext: !!n.tieToNext, slurTo: null }));
+          n.keys = n.keys.map((k) => ({
+            key: k, tieToNext: !!n.tieToNext, slurTo: null, glissandoTo: null,
+          }));
           delete n.tieToNext;
           delete n.slur;
         } else {
           (n.keys || []).forEach((tone) => {
             if (tone.slurTo === undefined) tone.slurTo = null;
+            if (tone.glissandoTo === undefined) tone.glissandoTo = null;
             delete tone.slur;
             delete tone.pendingSlurEnd;
           });
@@ -139,6 +143,10 @@ function migrateScore(loaded) {
 let score = createEmptyScore();
 let history = [structuredClone(score)];
 let historyIndex = 0;
+// The history-index position at the last save/open/new — if the current
+// position differs, there are unsaved edits (see the close-confirmation
+// handler below). Undo/redo back to this exact index counts as "not dirty".
+let savedHistoryIndex = 0;
 
 let selectedDuration = 'q';
 let selectedDotted = false;
@@ -156,8 +164,14 @@ let rangeDragging = null; // { part, page, startMeasure, endMeasure }
 let rangeSelection = null; // { part, measureStart, measureEnd }
 let clipboard = null; // { part, measures: [[note,...], ...] }
 let pendingClick = null; // { pageIndex, region, startClientX, startClientY, localY }
+// A blinking caret marking where a note would land — a first click on empty
+// staff area places it here instead of inserting right away; a second click
+// close to the same spot (see onPageMouseDown's mouseup handler) confirms
+// and actually inserts. { measureIndex, part, page, localX, localY } | null.
+let insertCaret = null;
 let selectedLink = null; // null | 'tuplet3' | 'tuplet5' | 'tuplet7' — see insertNote
 let pendingSlurStart = null; // { measureIndex, part, noteId, keyIndex } | null — see toggleSlurFromSelectedTone
+let pendingGlissandoStart = null; // { measureIndex, part, noteId, keyIndex } | null — see toggleGlissandoFromSelectedTone
 let multiSelected = []; // { measureIndex, part, noteId, keyIndex }[] — Ctrl/Cmd+click, see showMultiSelectContextMenu
 let selectedMeasureIndex = null;
 // Whole-note (chord-as-one-unit) range selection — built by dragging
@@ -175,6 +189,20 @@ let highlightEls = [];
 const DRAG_THRESHOLD = 6;
 
 const player = new Player();
+
+// A short confirmation blip when a note is actually inserted/added (see
+// insertNote/addPitchToNote) — audio feedback for what pitch just landed,
+// using the same per-part instrument playback already uses. Errors (e.g. no
+// audio output, sample fetch failure) are swallowed: a failed blip shouldn't
+// block the note from being inserted.
+async function playInsertedNoteBlip(part, key) {
+  try {
+    await player.ensureInstruments(score.instruments);
+    player.instruments[part].start({ note: pitchToMidi(key), duration: 0.35, velocity: 90 });
+  } catch (err) {
+    // no-op — see comment above
+  }
+}
 
 const scoreContainer = document.getElementById('score-container');
 const statusEl = document.getElementById('status');
@@ -379,6 +407,29 @@ function render() {
   renderMeasureNumbers(result.pages);
   renderTitleHeader(result.pages);
   renderShapes(result.pages);
+  renderInsertCaret(result.pages);
+}
+
+// ---------- 音符挿入キャレット (2回クリックで確定) ----------
+
+function clearInsertCaret() {
+  if (!insertCaret) return;
+  insertCaret = null;
+  document.querySelectorAll('.insert-caret').forEach((el) => el.remove());
+}
+
+function renderInsertCaret(pages) {
+  pages.forEach((pageDiv) => {
+    pageDiv.querySelectorAll('.insert-caret').forEach((el) => el.remove());
+  });
+  if (!insertCaret) return;
+  const pageDiv = pages[insertCaret.page];
+  if (!pageDiv) return;
+  const el = document.createElement('div');
+  el.className = 'insert-caret';
+  el.style.left = `${insertCaret.localX}px`;
+  el.style.top = `${insertCaret.localY - 20}px`;
+  pageDiv.appendChild(el);
 }
 
 function updateMeasureCount() {
@@ -429,6 +480,7 @@ function getSelectedTone() {
 
 function clearSelection() {
   pendingSlurStart = null;
+  pendingGlissandoStart = null;
   const hadMultiSelection = multiSelected.length > 0;
   multiSelected = [];
   if (!selected && !hadMultiSelection) return;
@@ -477,7 +529,9 @@ function addPitchToNote(note, region, y) {
   });
   if (alreadyThere) { setStatus('すでに同じ高さの音があります'); return; }
 
-  note.keys.push({ key, tieToNext: false, slurTo: null });
+  note.keys.push({
+    key, tieToNext: false, slurTo: null, glissandoTo: null,
+  });
   sortNoteKeys(note);
   const keyIndex = note.keys.findIndex((t) => t.key === key);
   selected = {
@@ -488,6 +542,7 @@ function addPitchToNote(note, region, y) {
   render();
   syncNoteControlsFromSelection();
   setStatus('和音に音を追加しました');
+  playInsertedNoteBlip(region.part, key);
 }
 
 // Reflects the currently-selected note's dynamic/hairpin/articulation state
@@ -518,6 +573,9 @@ function syncNoteControlsFromSelection() {
   });
   document.querySelectorAll('[data-tone-action="slur"]').forEach((b) => {
     b.classList.toggle('active', !!(tone && tone.slurTo));
+  });
+  document.querySelectorAll('[data-tone-action="glissando"]').forEach((b) => {
+    b.classList.toggle('active', !!(tone && tone.glissandoTo));
   });
 }
 
@@ -1442,6 +1500,14 @@ document.addEventListener('keydown', (e) => {
       pendingSlurStart = null;
       setStatus('スラーを取り消しました');
     }
+    if (pendingGlissandoStart) {
+      pendingGlissandoStart = null;
+      setStatus('グリッサンドを取り消しました');
+    }
+    if (insertCaret) {
+      clearInsertCaret();
+      render();
+    }
   }
 });
 
@@ -1470,6 +1536,7 @@ function onPageMouseDown(e, pageDiv, pageIndex) {
     clearRangeSelection();
     clearMeasureSelection();
     clearSelection();
+    clearInsertCaret();
     toggleTimeSigDisplay();
     return;
   }
@@ -1479,6 +1546,7 @@ function onPageMouseDown(e, pageDiv, pageIndex) {
     clearRangeSelection();
     clearMeasureSelection();
     clearSelection();
+    clearInsertCaret();
     if (markRegion.kind === 'chord') {
       const measure = score.measures[markRegion.measureIndex];
       const note = measure.lower.find((n) => n.id === markRegion.noteId);
@@ -1506,8 +1574,13 @@ function onPageMouseDown(e, pageDiv, pageIndex) {
     clearRangeSelection();
     clearMeasureSelection();
     clearSelection();
+    clearInsertCaret();
     return;
   }
+  // Clicking an actual note is unrelated to the insertion caret (below) —
+  // only a click that lands on truly empty staff space should ever leave it
+  // in place waiting for its confirming second click.
+  if (existing) clearInsertCaret();
 
   // Ctrl/Cmd+click toggles a note (or one tone of a chord) in/out of the
   // multi-selection, Office-style, instead of the normal single-select —
@@ -1549,6 +1622,37 @@ function onPageMouseDown(e, pageDiv, pageIndex) {
       setStatus('スラーをつけました');
     } else {
       setStatus('スラーを取り消しました');
+    }
+    clearRangeSelection();
+    clearMeasureSelection();
+    selected = {
+      measureIndex: region.measureIndex, part: region.part, noteId: existing.noteRef.id, keyIndex: existing.keyIndex,
+    };
+    render();
+    syncNoteControlsFromSelection();
+    return;
+  }
+
+  // 同様に、グリッサンドが終わりの音符を待っている場合 (see
+  // toggleGlissandoFromSelectedTone).
+  if (pendingGlissandoStart && existing && !e.shiftKey) {
+    const startMeasure = score.measures[pendingGlissandoStart.measureIndex];
+    const startNote = startMeasure && startMeasure[pendingGlissandoStart.part]
+      .find((n) => n.id === pendingGlissandoStart.noteId);
+    const startTone = startNote && startNote.keys[pendingGlissandoStart.keyIndex];
+    const isSameTone = pendingGlissandoStart.noteId === existing.noteRef.id
+      && pendingGlissandoStart.keyIndex === existing.keyIndex;
+    const validTarget = startTone && !isSameTone && !existing.noteRef.isRest;
+    pendingGlissandoStart = null;
+    if (validTarget) {
+      startTone.glissandoTo = {
+        noteId: existing.noteRef.id,
+        pitchKey: pitchKeyOf(existing.noteRef.keys[existing.keyIndex].key),
+      };
+      pushHistory();
+      setStatus('グリッサンドをつけました');
+    } else {
+      setStatus('グリッサンドを取り消しました');
     }
     clearRangeSelection();
     clearMeasureSelection();
@@ -1716,18 +1820,35 @@ document.addEventListener('mouseup', () => {
   if (rangeDragging) {
     rangeDragging = null;
   } else if (pendingClick) {
-    const { region, localX, localY } = pendingClick;
+    const { pageIndex, region, localX, localY } = pendingClick;
     pendingClick = null;
     clearRangeSelection();
     clearMeasureSelection();
-    const slotNote = !selectedRest ? findSameSlotNote(region, localX) : null;
-    if (slotNote) {
-      addPitchToNote(slotNote, region, localY);
+    // A blinking caret already sitting on (about) this exact spot means this
+    // is the *confirming* second click — insert for real. Otherwise this
+    // first click just places/moves the caret here without inserting yet
+    // (see clearInsertCaret/renderInsertCaret).
+    const CARET_CONFIRM_TOLERANCE = 12;
+    const confirmingCaret = insertCaret
+      && insertCaret.measureIndex === region.measureIndex
+      && insertCaret.part === region.part
+      && Math.hypot(localX - insertCaret.localX, localY - insertCaret.localY) <= CARET_CONFIRM_TOLERANCE;
+    if (confirmingCaret) {
+      clearInsertCaret();
+      const slotNote = !selectedRest ? findSameSlotNote(region, localX) : null;
+      if (slotNote) {
+        addPitchToNote(slotNote, region, localY);
+      } else {
+        insertNote(region, localX, localY);
+      }
+      showFloatingToolbox();
+      syncNoteControlsFromSelection();
     } else {
-      insertNote(region, localX, localY);
+      insertCaret = {
+        measureIndex: region.measureIndex, part: region.part, page: pageIndex, localX, localY,
+      };
+      render();
     }
-    showFloatingToolbox();
-    syncNoteControlsFromSelection();
   }
   if (dragging) {
     if (dragging.axis === 'range') {
@@ -1765,6 +1886,7 @@ document.querySelector('.score-scroll').addEventListener('mousedown', (e) => {
   clearMeasureSelection();
   clearSelection();
   deselectShapeAndField();
+  if (insertCaret) { clearInsertCaret(); render(); }
 });
 
 // Parses a 'tuplet3' / 'tuplet5' / 'tuplet7' link value into its note count.
@@ -1836,7 +1958,9 @@ function insertNote(region, x, y) {
 
   const makeNote = (overrides = {}) => ({
     id: makeNoteId(),
-    keys: [{ key, tieToNext: false, slurTo: null }],
+    keys: [{
+      key, tieToNext: false, slurTo: null, glissandoTo: null,
+    }],
     duration: selectedDuration,
     dotted: selectedDotted,
     isRest: selectedRest,
@@ -1866,6 +1990,7 @@ function insertNote(region, x, y) {
 
   pushHistory();
   render();
+  if (!selectedRest) playInsertedNoteBlip(region.part, key);
 }
 
 // Selects a specific note directly (not via a click on the note itself) —
@@ -1969,15 +2094,17 @@ function showChordCandidatePicker(measureIndex, noteId, clientX, clientY) {
   showContextMenu(clientX, clientY, items);
 }
 
-// A note being deleted might be the target of another tone's スラー
-// elsewhere in the score (slurs are explicit links, not position-based) —
-// clear any that point at it so they don't linger as dangling references.
+// A note being deleted might be the target of another tone's スラー or
+// グリッサンド elsewhere in the score (both are explicit links, not
+// position-based) — clear any that point at it so they don't linger as
+// dangling references.
 function clearSlursTargeting(noteId) {
   score.measures.forEach((m) => {
     PARTS.forEach((part) => {
       m[part].forEach((n) => {
         n.keys.forEach((t) => {
           if (t.slurTo && t.slurTo.noteId === noteId) t.slurTo = null;
+          if (t.glissandoTo && t.glissandoTo.noteId === noteId) t.glissandoTo = null;
         });
       });
     });
@@ -2271,12 +2398,16 @@ function applyTieToSelectedTone() {
     const canMergeIntoNext = next && !next.isRest && next.partialChordNote
       && next.duration === selectedDuration && next.dotted === selectedDotted;
     if (canMergeIntoNext) {
-      next.keys.push({ key: tone.key, tieToNext: false, slurTo: null });
+      next.keys.push({
+        key: tone.key, tieToNext: false, slurTo: null, glissandoTo: null,
+      });
       sortNoteKeys(next);
     } else {
       const newNote = {
         id: makeNoteId(),
-        keys: [{ key: tone.key, tieToNext: false, slurTo: null }],
+        keys: [{
+          key: tone.key, tieToNext: false, slurTo: null, glissandoTo: null,
+        }],
         duration: selectedDuration,
         dotted: selectedDotted,
         isRest: false,
@@ -2332,10 +2463,35 @@ function toggleSlurFromSelectedTone() {
   setStatus('スラーの終わりにしたい音符をクリックしてください(Escで取消)');
 }
 
+// Same two-click arm/confirm shape as toggleSlurFromSelectedTone, but for a
+// グリッサンド (滑奏) — a straight line between two noteheads (see
+// drawGlissandoLines in staffRenderer.js) rather than a curve, since a
+// glissando doesn't imply legato phrasing the way a slur does.
+function toggleGlissandoFromSelectedTone() {
+  const note = getSelectedNote();
+  if (!note || note.isRest) { setStatus('音符を選択してください'); return; }
+  const tone = getSelectedTone();
+  if (!tone) return;
+
+  if (tone.glissandoTo) {
+    tone.glissandoTo = null;
+    pendingGlissandoStart = null;
+    pushHistory();
+    render();
+    syncNoteControlsFromSelection();
+    setStatus('グリッサンドを解除しました');
+    return;
+  }
+
+  pendingGlissandoStart = { ...selected };
+  setStatus('グリッサンドの終わりにしたい音符をクリックしてください(Escで取消)');
+}
+
 document.querySelectorAll('[data-tone-action]').forEach((btn) => {
   btn.addEventListener('click', () => {
     if (btn.dataset.toneAction === 'tie') applyTieToSelectedTone();
     else if (btn.dataset.toneAction === 'slur') toggleSlurFromSelectedTone();
+    else if (btn.dataset.toneAction === 'glissando') toggleGlissandoFromSelectedTone();
   });
 });
 
@@ -2388,26 +2544,37 @@ document.getElementById('btn-delete').addEventListener('click', deleteSelected);
 document.getElementById('btn-undo').addEventListener('click', undo);
 document.getElementById('btn-redo').addEventListener('click', redo);
 
+// Inserts right after whichever measure is selected (see the
+// measure-number label's own click handler) — falls back to appending at
+// the end when nothing is selected, same as the old always-append behavior.
 document.getElementById('btn-add-measure').addEventListener('click', () => {
-  score.measures.push(createEmptyMeasure());
+  const insertAt = selectedMeasureIndex !== null ? selectedMeasureIndex + 1 : score.measures.length;
+  score.measures.splice(insertAt, 0, createEmptyMeasure());
   pushHistory();
   render();
 });
 
+// Removes the selected measure outright (splice, shifting every later
+// measure back) rather than just clearing its notes — falls back to the
+// last measure when nothing is selected.
 document.getElementById('btn-remove-measure').addEventListener('click', () => {
   if (score.measures.length <= 1) {
     setStatus('これ以上削除できません');
     return;
   }
-  const last = score.measures[score.measures.length - 1];
-  const isEmpty = PARTS.every((p) => last[p].length === 0);
+  const targetIndex = selectedMeasureIndex !== null ? selectedMeasureIndex : score.measures.length - 1;
+  const target = score.measures[targetIndex];
+  const isEmpty = PARTS.every((p) => target[p].length === 0);
   const doRemove = () => {
-    score.measures.pop();
+    score.measures.splice(targetIndex, 1);
+    clearMeasureSelection();
+    clearRangeSelection();
+    clearSelection();
     pushHistory();
     render();
   };
   if (isEmpty) { doRemove(); return; }
-  showConfirmModal('最後の小節には音符があります。削除しますか?').then((ok) => { if (ok) doRemove(); });
+  showConfirmModal('この小節には音符があります。削除しますか?').then((ok) => { if (ok) doRemove(); });
 });
 
 const zoomPercentEl = document.getElementById('zoom-percent');
@@ -2666,9 +2833,12 @@ function download(filename, blobParts, type) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-document.getElementById('btn-save').addEventListener('click', () => {
+function saveScoreFile() {
   download(`${score.title || 'score'}.json`, [JSON.stringify(score, null, 2)], 'application/json');
-});
+  savedHistoryIndex = historyIndex;
+}
+
+document.getElementById('btn-save').addEventListener('click', saveScoreFile);
 
 const openInput = document.getElementById('open-input');
 document.getElementById('btn-open').addEventListener('click', () => openInput.click());
@@ -2687,6 +2857,7 @@ openInput.addEventListener('change', () => {
       if (!score.keySignature) score.keySignature = 'C';
       history = [structuredClone(score)];
       historyIndex = 0;
+      savedHistoryIndex = 0;
       selected = null;
       rangeSelection = null;
       selectedMeasureIndex = null;
@@ -3446,6 +3617,20 @@ function applyMultiSlur() {
   setStatus('スラーをつけました');
 }
 
+// Same shape as applyMultiSlur, but for グリッサンド (see toggleGlissandoFromSelectedTone).
+function applyMultiGlissando() {
+  const sorted = sortMultiSelected(multiSelected);
+  if (sorted.length < 2) { setStatus('グリッサンドには2つ以上の音符を選択してください'); return; }
+  const start = resolveMultiSelectedTone(sorted[0]);
+  const end = resolveMultiSelectedTone(sorted[sorted.length - 1]);
+  if (!start || !end) { setStatus('休符にはグリッサンドをつけられません'); return; }
+  start.tone.glissandoTo = { noteId: sorted[sorted.length - 1].noteId, pitchKey: pitchKeyOf(end.tone.key) };
+  multiSelected = [];
+  pushHistory();
+  render();
+  setStatus('グリッサンドをつけました');
+}
+
 // Groups the selection into an N連符 — they must all be the same part, the
 // same measure, and consecutive there (a tuplet is a rhythmic regrouping of
 // back-to-back notes, not an arbitrary set).
@@ -3477,6 +3662,7 @@ function showMultiSelectContextMenu(clientX, clientY) {
     { header: `${multiSelected.length}個選択中` },
     { label: 'タイ', onClick: applyMultiTie },
     { label: 'スラー', onClick: applyMultiSlur },
+    { label: 'グリッサンド', onClick: applyMultiGlissando },
     { label: '3連符', onClick: () => applyMultiTuplet(3) },
     { label: '5連符', onClick: () => applyMultiTuplet(5) },
     { label: '7連符', onClick: () => applyMultiTuplet(7) },
@@ -3487,6 +3673,26 @@ function showMultiSelectContextMenu(clientX, clientY) {
 
 document.getElementById('btn-range-copy').addEventListener('click', doRangeCopy);
 document.getElementById('btn-range-delete').addEventListener('click', doRangeDelete);
+
+// n番括弧 (see drawVoltaBrackets in staffRenderer.js) — applies to whichever
+// measure range is currently selected (範囲選択), regardless of that
+// selection's own `part` (a volta bracket spans the whole system, not one
+// staff), stored on the range's first measure only.
+document.getElementById('btn-volta-apply').addEventListener('click', () => {
+  const range = clampedRangeSelection();
+  if (!range) { setStatus('範囲を選択してください(譜面をドラッグ)'); return; }
+  const number = Number(document.getElementById('volta-number-select').value);
+  score.measures[range.measureStart].volta = { number, span: range.measureEnd - range.measureStart + 1 };
+  pushHistory();
+  render();
+});
+document.getElementById('btn-volta-clear').addEventListener('click', () => {
+  const range = clampedRangeSelection();
+  if (!range) { setStatus('範囲を選択してください(譜面をドラッグ)'); return; }
+  for (let i = range.measureStart; i <= range.measureEnd; i += 1) score.measures[i].volta = null;
+  pushHistory();
+  render();
+});
 document.getElementById('btn-range-paste').addEventListener('click', () => doRangePaste());
 
 // --- テンプレート(空フォーマットのみ)の保存/読み込み ---
@@ -3525,6 +3731,7 @@ templateInput.addEventListener('change', () => {
       };
       history = [structuredClone(score)];
       historyIndex = 0;
+      savedHistoryIndex = 0;
       selected = null;
       rangeSelection = null;
       selectedMeasureIndex = null;
@@ -3542,4 +3749,49 @@ templateInput.addEventListener('change', () => {
 updateRangeLabel();
 updateWidthSliderUI();
 render();
+
+// --- 終了時の保存確認 ---
+// main.js intercepts the window's close button and sends 'close-requested'
+// instead of closing immediately, since only the renderer knows whether
+// there are unsaved edits (see savedHistoryIndex above).
+const closeConfirmModalEl = document.getElementById('close-confirm-modal');
+const closeConfirmSaveBtn = document.getElementById('close-confirm-save');
+const closeConfirmDiscardBtn = document.getElementById('close-confirm-discard');
+const closeConfirmCancelBtn = document.getElementById('close-confirm-cancel');
+
+function showCloseConfirmModal() {
+  return new Promise((resolve) => {
+    closeConfirmModalEl.hidden = false;
+    const cleanup = () => {
+      closeConfirmModalEl.hidden = true;
+      closeConfirmSaveBtn.removeEventListener('click', onSave);
+      closeConfirmDiscardBtn.removeEventListener('click', onDiscard);
+      closeConfirmCancelBtn.removeEventListener('click', onCancel);
+    };
+    const onSave = () => { cleanup(); resolve('save'); };
+    const onDiscard = () => { cleanup(); resolve('discard'); };
+    const onCancel = () => { cleanup(); resolve('cancel'); };
+    closeConfirmSaveBtn.addEventListener('click', onSave);
+    closeConfirmDiscardBtn.addEventListener('click', onDiscard);
+    closeConfirmCancelBtn.addEventListener('click', onCancel);
+  });
+}
+
+if (window.electronAPI && window.electronAPI.onCloseRequested) {
+  window.electronAPI.onCloseRequested(async () => {
+    if (historyIndex === savedHistoryIndex) {
+      window.electronAPI.respondClose('close');
+      return;
+    }
+    const action = await showCloseConfirmModal();
+    if (action === 'cancel') return;
+    if (action === 'save') {
+      saveScoreFile();
+      // Give the Blob-download a moment to actually start before the
+      // renderer (and its Blob URL) gets torn down by window.close().
+      await new Promise((resolve) => { setTimeout(resolve, 400); });
+    }
+    window.electronAPI.respondClose('close');
+  });
+}
 

@@ -17,6 +17,25 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+
+  // Ask the renderer before closing so unsaved score edits aren't silently
+  // discarded (see app.js's onCloseRequested — it's the only side that knows
+  // whether there are unsaved changes, via its undo-history position).
+  let allowClose = false;
+  const onCloseResponse = (event, action) => {
+    if (event.sender !== win.webContents) return;
+    if (action === 'close') {
+      allowClose = true;
+      win.close();
+    }
+  };
+  win.on('close', (event) => {
+    if (allowClose) return;
+    event.preventDefault();
+    win.webContents.send('close-requested');
+  });
+  ipcMain.on('close-response', onCloseResponse);
+  win.on('closed', () => ipcMain.removeListener('close-response', onCloseResponse));
 }
 
 // PDF書き出し (separate from 印刷/window.print(), see app.js's btn-export-pdf)
