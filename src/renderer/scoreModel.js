@@ -1,11 +1,5 @@
 export const PARTS = ['upper', 'lower', 'pedal'];
 
-export const PART_LABELS = {
-  upper: '上鍵盤',
-  lower: '下鍵盤',
-  pedal: 'ペダル',
-};
-
 // default clefs for a brand-new score; each score can override per part via score.clefs
 export const PART_CLEF = {
   upper: 'treble',
@@ -24,20 +18,20 @@ export function getClef(score, part) {
   return (score.clefs && score.clefs[part]) || PART_CLEF[part];
 }
 
-export const DURATION_BEATS = {
-  w: 4,
-  h: 2,
-  q: 1,
-  '8': 0.5,
-  '16': 0.25,
-};
-
 export const DURATION_LABELS = {
   w: '全音符',
   h: '2分音符',
   q: '4分音符',
   '8': '8分音符',
   '16': '16分音符',
+};
+
+export const DURATION_BEATS = {
+  w: 4,
+  h: 2,
+  q: 1,
+  '8': 0.5,
+  '16': 0.25,
 };
 
 // Tempo markings are given as "note value = BPM" (e.g. "quarter note = 100"),
@@ -53,32 +47,11 @@ export function effectiveQuarterBpm(score) {
   return bpm * (DURATION_BEATS[noteValue] || 1);
 }
 
-export const DYNAMICS = ['pp', 'p', 'mp', 'mf', 'f', 'ff'];
-
-export const MARKERS = ['', 'Segno', 'D.C.', 'D.S.', 'Fine', 'Coda'];
-
-export const ARTICULATIONS = ['', 'staccato', 'tenuto', 'accent', 'marcato'];
-
-export const ARTICULATION_LABELS = {
-  staccato: 'スタッカート',
-  tenuto: 'テヌート',
-  accent: 'アクセント',
-  marcato: 'マルカート',
-};
-
 // Rest glyphs (and rendered position) don't move with clef the way pitched
 // notes do — this is the "sits on the middle line" anchor key per clef.
 export const REST_ANCHOR_KEY = {
   treble: 'b/4',
   bass: 'd/3',
-};
-
-export const BARLINE_OPTIONS = ['single', 'double', 'final'];
-
-export const BARLINE_LABELS = {
-  single: '通常線',
-  double: '二重線',
-  final: '終止線',
 };
 
 // Major-key signatures only (a minor key shares its relative major's
@@ -149,10 +122,6 @@ export function durationBeats(duration, dotted, tupletRatio = 1) {
   return base * (dotted ? 1.5 : 1) * tupletRatio;
 }
 
-// Tuplet options offered in the UI: N notes in the time of the nearest lower
-// power of two (3-in-2, 5-in-4, 7-in-4) — the conventional grouping.
-export const TUPLET_COUNTS = [3, 5, 7];
-
 export function tupletNotesOccupied(count) {
   let occupied = 1;
   while (occupied * 2 < count) occupied *= 2;
@@ -192,9 +161,10 @@ export function createEmptyMeasure() {
     // rows) — set via targetMeasure()'s "対象小節" input plus the 歌詞 ribbon
     // group's staff select.
     lyrics: { upper: '', lower: '', pedal: '' },
-    // n番括弧(volta/repeat-ending bracket) — set only on the FIRST measure
-    // of the bracket's span; { number: 1-5, span: how many measures
-    // (including this one) the bracket covers }. null everywhere else.
+    // n番括弧(volta/repeat-ending bracket) — { number: 1-5 } on the one
+    // measure the bracket covers, null everywhere else. Drawn as a 鉤括弧
+    // (open on the right, see drawVoltaBrackets) and always exactly one
+    // measure wide.
     volta: null,
   };
 }
@@ -271,9 +241,19 @@ export function isValidTimeSig(value) {
   return /^[1-9][0-9]?\/(1|2|4|8|16|32)$/.test(value);
 }
 
+// How much music one full measure holds, in the quarter-note units the rest
+// of the app measures durations in (see DURATION_BEATS, where q = 1).
+//
+// The time signature's *denominator* is what a beat is counted in, so it has
+// to be converted: 6/8 is six eighth notes = 3 quarter notes, 2/2 is two half
+// notes = 4 quarter notes. Reading only the numerator (as this used to) made
+// every signature whose denominator isn't 4 hold the wrong amount — a 6/8
+// measure accepted six *quarter* notes, a 2/2 measure filled up after one
+// half note — which then propagated into rendering and playback timing.
 export function beatsPerMeasure(score) {
-  const [beats] = score.timeSig.split('/').map(Number);
-  return beats;
+  const [beats, unit] = String((score && score.timeSig) || '4/4').split('/').map(Number);
+  if (!beats || !unit) return 4;
+  return beats * (4 / unit);
 }
 
 // Measure 0 may be a shorter "pickup" (anacrusis) measure; every other
@@ -312,22 +292,6 @@ const CHORD_QUALITIES = [
   { suffix: 'm', intervals: [0, 3, 7] },
   { suffix: '', intervals: [0, 4, 7] },
 ];
-
-// Parses a lead-sheet chord symbol ("D", "F#m7", "Bbmaj7", …) into a root
-// semitone (0-11, C=0) and the semitone intervals above it. Returns null for
-// empty/unrecognized text so callers can just skip playback for that measure.
-export function parseChordSymbol(text) {
-  if (!text) return null;
-  const m = /^([A-Ga-g])([#b]?)(.*)$/.exec(text.trim());
-  if (!m) return null;
-  const [, letterRaw, accidental, rest] = m;
-  const letter = letterRaw.toUpperCase();
-  const quality = CHORD_QUALITIES.find((q) => q.suffix === rest.trim());
-  if (!quality) return null;
-  const accOffset = accidental === '#' ? 1 : accidental === 'b' ? -1 : 0;
-  const rootSemitone = ((CHORD_ROOT_SEMITONE[letter] + accOffset) % 12 + 12) % 12;
-  return { rootSemitone, intervals: quality.intervals };
-}
 
 // Root note choices for the コード select UI (sharps only, to keep the list
 // short — enharmonic spelling doesn't matter since the chord is audio-only).

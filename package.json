@@ -1,9 +1,10 @@
 {
   "name": "electone-sheet-music-app",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "description": "エレクトーン楽譜生成アプリ",
   "main": "src/main/main.js",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "start": "electron .",
     "dist": "electron-builder --win",
     "publish": "git tag \"v$npm_package_version\" 2>/dev/null; git push origin \"v$npm_package_version\" 2>/dev/null; electron-builder --win --publish always"

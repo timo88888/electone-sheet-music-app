@@ -210,23 +210,6 @@ label { font-size: 11px; color: #eee; display: flex; align-items: center; gap: 3
   pointer-events: none;
 }
 
-/* Note-insertion caret (see insertCaret in app.js) — a first click on empty
-   staff space plants this instead of inserting right away; a second click
-   near the same spot confirms. Blinks like a text cursor so it reads as
-   "waiting for confirmation", not as a note that's already there. */
-.insert-caret {
-  position: absolute;
-  width: 2px;
-  height: 40px;
-  background: #1a73e8;
-  pointer-events: none;
-  animation: insert-caret-blink 1s step-end infinite;
-}
-@keyframes insert-caret-blink {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
-}
-
 /* Overlay marking whichever note(s) are sounding right now during playback —
    a distinct hot color so it doesn't get confused with the (blue) range
    selection or the (orange) tie/slur/tuplet placeholder rests. */
@@ -498,13 +481,126 @@ input.score-header-field:hover, input.score-header-field:focus {
 }
 .modal-primary:hover { background: #3086f0; }
 
-@media print {
-  .quickbar, .ribbon-tabs, .ribbon-panel, .score-scroll, .floating-toolbox,
-  .context-menu, .measure-number-label { display: block; }
-  .quickbar, .ribbon-tabs, .ribbon-panel, .floating-toolbox,
-  .context-menu, .measure-number-label { display: none; }
-  .score-scroll { overflow: visible; height: auto; padding: 0; }
-  .score-container { transform: none !important; gap: 0; }
-  .score-page { box-shadow: none; page-break-after: always; }
-  .score-header-field { outline: none !important; }
+/* ---------- printing / PDF export ---------- */
+/*
+   Printed output (and PDF export, which goes through the same CSS via
+   printToPDF) must contain the score and nothing else.
+
+   On screen the app is a fixed-height flex column — quickbar, ribbon, then a
+   scrolling score pane — and `body` is `height: 100vh; overflow: hidden`.
+   Carried into print as-is, that clipped everything past the first screenful
+   and left the editing chrome sitting on top of the first system. So print
+   unwinds the whole shell back to ordinary document flow first, then hides
+   every editing-only element.
+*/
+
+/* One score page per sheet, no printer margin of its own — .score-page
+   already carries the score's own margins (see LAYOUT.pageMargin). */
+/* One score page per sheet, no printer margin of its own — .score-page
+   already carries the score's own margins (see LAYOUT.pageMargin). */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+/*
+   Print layout.
+
+   Scoped to `html.printing` rather than `@media print`, because the two ways
+   this app produces output take different paths: 印刷 goes through
+   window.print() (print media), while PDF書き出し goes through the main
+   process's webContents.printToPDF(), which drives the page from outside and
+   does not reliably switch the renderer into print media. app.js adds the
+   class for both (see enterPrintLayout), so one rule set covers them.
+
+   On screen the app is a fixed-height flex column — quickbar, ribbon, then a
+   scrolling score pane — with `body { height: 100vh; overflow: hidden }`.
+   Carried into print as-is that clipped everything past the first screenful
+   and left the editing chrome sitting on top of the first system, so this
+   unwinds the shell back to ordinary document flow first.
+*/
+html.printing,
+html.printing body {
+  display: block;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+  background: #fff;
+}
+
+/* Editing chrome and transient overlays — never part of the printed score.
+   `!important` because several of these are toggled inline or by an
+   `.active` class at runtime. */
+html.printing .quickbar,
+html.printing .ribbon-tabs,
+html.printing .ribbon-panel,
+html.printing .ribbon-panel.active,
+html.printing .floating-toolbox,
+html.printing .context-menu,
+html.printing .measure-number-label,
+html.printing .modal-overlay,
+html.printing .status,
+html.printing .range-highlight,
+html.printing .playing-highlight,
+html.printing .shape-handle {
+  display: none !important;
+}
+
+/* Selection outlines are editing affordances, not content. */
+html.printing .shape-el.selected { outline: none !important; }
+html.printing .score-header-field { outline: none !important; }
+
+html.printing .score-scroll {
+  display: block;
+  overflow: visible;
+  height: auto;
+  max-height: none;
+  flex: none;
+  padding: 0;
+  margin: 0;
+}
+
+/*
+   A .score-page is laid out at LAYOUT.pageWidth (1050px) with LAYOUT's A4
+   aspect ratio, so it needs scaling down to fit a real A4 sheet.
+
+   `zoom` rather than `transform: scale()` — zoom scales the layout box
+   itself, so each page ends up genuinely page-sized and the page break lands
+   correctly. A transform would paint smaller but leave the original
+   1050x1485 box behind, and pagination would still break mid-page.
+
+   0.75 rather than the exact 210mm/1050px (0.7559): scaling to the millimetre
+   left the content 0.01px short of the sheet, and any rounding in the print
+   layout tipped it over into a second, blank sheet after every page. 0.75
+   leaves ~2mm of slack all round, which is inside a printer's unprintable
+   margin anyway.
+
+   Both the vertical and 見開き (spread) layouts collapse to a plain block
+   here: page breaks inside a flex container are unreliable, and a spread is a
+   screen reading mode, not how the score should come out on paper.
+*/
+html.printing .score-container,
+html.printing .score-container.spread-view {
+  display: block;
+  flex-direction: column;
+  transform: none !important;
+  zoom: 0.75;
+  gap: 0;
+  width: auto;
+}
+
+html.printing .score-page {
+  box-shadow: none;
+  margin: 0;
+  overflow: hidden;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  break-after: page;
+  page-break-after: always;
+}
+/* Without this the final page emits a trailing break, printing one blank
+   sheet at the end of every score. */
+html.printing .score-page:last-child {
+  break-after: auto;
+  page-break-after: auto;
 }

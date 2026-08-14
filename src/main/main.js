@@ -51,8 +51,21 @@ ipcMain.handle('export-pdf', async (event, defaultFileName) => {
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   });
   if (canceled || !filePath) return { canceled: true };
-  const pdfData = await event.sender.printToPDF({});
-  fs.writeFileSync(filePath, pdfData);
+  // Without explicit options printToPDF defaults to Letter with its own
+  // margins, which doesn't match the A4-proportioned pages the renderer lays
+  // out — the score came out rescaled and clipped. preferCSSPageSize honors
+  // the stylesheet's own `@page { size: A4; margin: 0 }` instead, and
+  // printBackground is needed for anything the score draws as a fill.
+  const pdfData = await event.sender.printToPDF({
+    pageSize: 'A4',
+    landscape: false,
+    printBackground: true,
+    preferCSSPageSize: true,
+    margins: {
+      top: 0, bottom: 0, left: 0, right: 0,
+    },
+  });
+  await fs.promises.writeFile(filePath, pdfData);
   return { canceled: false, filePath };
 });
 

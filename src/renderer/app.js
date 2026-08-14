@@ -1,5 +1,5 @@
 import {
-  PARTS, CLEF_OPTIONS, CLEF_LABELS, KEY_SIGNATURES, CHORD_ROOTS, CHORD_QUALITY_OPTIONS,
+  PARTS, PART_CLEF, CLEF_OPTIONS, CLEF_LABELS, KEY_SIGNATURES, CHORD_ROOTS, CHORD_QUALITY_OPTIONS,
   TEMPO_NOTE_VALUES, DURATION_LABELS, effectiveQuarterBpm,
   detectChordCandidates, chordPitchClassesForLowerNote,
   REHEARSAL_OPTIONS, REGISTRATION_OPTIONS,
@@ -7,7 +7,9 @@ import {
   durationBeats, beatsPerMeasure, measureCapacity, isValidTimeSig,
   tupletNotesOccupied, noteBeats, noteBeatWindow,
 } from './scoreModel.js';
-import { renderScore, LAYOUT } from './staffRenderer.js';
+import {
+  renderScore, LAYOUT, hitBandAbove, hitBandBelow,
+} from './staffRenderer.js';
 import {
   pitchForIndex, indexForY, transposeKey, parseKey, buildKey,
 } from './pitchMap.js';
@@ -15,6 +17,10 @@ import {
   Player, renderScoreToWavBuffer, buildPlaybackEvents, PLAYBACK_LEAD, DEFAULT_INSTRUMENT, pitchToMidi,
 } from './playback.js';
 import { buildMidiFile } from './midiExport.js';
+import {
+  pitchKeyOf, pruneDanglingLinks, retargetLinksTo, retargetLinksAfterTranspose,
+  cloneNotesWithFreshIds as cloneNotesWithFreshIdsPure,
+} from './noteLinks.js';
 import { getSoundfontNames } from '../../node_modules/smplr/dist/index.mjs';
 
 // Tempo marking note icon, drawn as inline SVG (see renderTitleHeader) —
@@ -62,7 +68,12 @@ function migrateScore(loaded) {
     // shared value most often belonged to the melody, so it lands on 上鍵盤.
     if (!measure.lyrics) measure.lyrics = { upper: measure.lyric || '', lower: '', pedal: '' };
     delete measure.lyric;
+    // n番括弧 used to span a measure *range* ({ number, span }); it's now
+    // always exactly one measure, set on a single 対象小節. An old multi-
+    // measure bracket keeps its number and simply shrinks to its first
+    // measure — the surplus measures had no marking of their own to preserve.
     if (measure.volta === undefined) measure.volta = null;
+    if (measure.volta && measure.volta.span !== undefined) delete measure.volta.span;
     // コード used to live on the measure; now it's per-note. Best-effort
     // carry the old per-measure value onto the first 下鍵盤 note (a
     // hand-typed chord existed only because someone entered it, so treat it
@@ -159,16 +170,14 @@ let hitMap = [];
 let annotationHitMap = [];
 let markHitMap = [];
 let timeSigHitMap = [];
+// The stave gap the current render actually used (see computeRequiredStaveGap
+// in staffRenderer.js) — hit-testing scales its bands to it.
+let layoutStaveGap = LAYOUT.staveGap;
 let dragging = null;
 let rangeDragging = null; // { part, page, startMeasure, endMeasure }
 let rangeSelection = null; // { part, measureStart, measureEnd }
 let clipboard = null; // { part, measures: [[note,...], ...] }
 let pendingClick = null; // { pageIndex, region, startClientX, startClientY, localY }
-// A blinking caret marking where a note would land — a first click on empty
-// staff area places it here instead of inserting right away; a second click
-// close to the same spot (see onPageMouseDown's mouseup handler) confirms
-// and actually inserts. { measureIndex, part, page, localX, localY } | null.
-let insertCaret = null;
 let selectedLink = null; // null | 'tuplet3' | 'tuplet5' | 'tuplet7' — see insertNote
 let pendingSlurStart = null; // { measureIndex, part, noteId, keyIndex } | null — see toggleSlurFromSelectedTone
 let pendingGlissandoStart = null; // { measureIndex, part, noteId, keyIndex } | null — see toggleGlissandoFromSelectedTone
@@ -336,7 +345,28 @@ function showChordModal(title, currentValue) {
   });
 }
 
+// ---------- 音符間リンク(タイ/スラー/グリッサンド)の整合性 ----------
+//
+// The rules themselves live in noteLinks.js (pure functions over the score
+// model, so they can be unit-tested); these are the thin bindings that supply
+// this module's `score` and id generator. See that file for why link
+// integrity is centralized rather than handled at each edit site.
+
+// The single way to change a tone's pitch. Everything that moves a note up or
+// down goes through here, so links pointing *at* it follow along instead of
+// being pruned away as dangling.
+function setTonePitch(note, tone, newKey) {
+  const oldPitchKey = pitchKeyOf(tone.key);
+  tone.key = newKey;
+  retargetLinksTo(score, PARTS, note.id, oldPitchKey, pitchKeyOf(newKey));
+}
+
+function cloneNotesWithFreshIds(notes) {
+  return cloneNotesWithFreshIdsPure(notes, makeNoteId);
+}
+
 function pushHistory() {
+  pruneDanglingLinks(score, PARTS);
   history = history.slice(0, historyIndex + 1);
   history.push(structuredClone(score));
   historyIndex = history.length - 1;
@@ -392,10 +422,28 @@ function recomputeAutoChords() {
   });
 }
 
+// render() rebuilds every page's SVG from scratch, which is fine for a single
+// edit but wasteful during a drag: mousemove can fire many times per frame,
+// and only the last one is ever seen. Coalescing to one redraw per animation
+// frame keeps dragging responsive on multi-page scores.
+let renderQueued = false;
+function renderSoon() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    render();
+  });
+}
+
 function render() {
   markSelection();
   recomputeAutoChords();
   const result = renderScore(scoreContainer, score, LAYOUT);
+  // The gap between staves is computed per score (it widens to clear tall
+  // ledger lines), and click hit-testing has to use the same value — see
+  // hitBandAbove/hitBandBelow.
+  layoutStaveGap = result.staveGap;
   hitMap = result.hitMap;
   annotationHitMap = result.annotationHitMap;
   markHitMap = result.markHitMap;
@@ -407,29 +455,6 @@ function render() {
   renderMeasureNumbers(result.pages);
   renderTitleHeader(result.pages);
   renderShapes(result.pages);
-  renderInsertCaret(result.pages);
-}
-
-// ---------- 音符挿入キャレット (2回クリックで確定) ----------
-
-function clearInsertCaret() {
-  if (!insertCaret) return;
-  insertCaret = null;
-  document.querySelectorAll('.insert-caret').forEach((el) => el.remove());
-}
-
-function renderInsertCaret(pages) {
-  pages.forEach((pageDiv) => {
-    pageDiv.querySelectorAll('.insert-caret').forEach((el) => el.remove());
-  });
-  if (!insertCaret) return;
-  const pageDiv = pages[insertCaret.page];
-  if (!pageDiv) return;
-  const el = document.createElement('div');
-  el.className = 'insert-caret';
-  el.style.left = `${insertCaret.localX}px`;
-  el.style.top = `${insertCaret.localY - 20}px`;
-  pageDiv.appendChild(el);
 }
 
 function updateMeasureCount() {
@@ -719,7 +744,8 @@ function toLocalCoords(pageDiv, clientX, clientY) {
 function candidateRegionsAt(pageIndex, x, y) {
   return hitMap.filter(
     (r) => r.page === pageIndex && x >= r.x0 - 30 && x <= r.x1
-      && y >= r.topY - 45 && y <= r.topY + 85,
+      && y >= r.topY - hitBandAbove(layoutStaveGap)
+      && y <= r.topY + hitBandBelow(layoutStaveGap),
   );
 }
 
@@ -764,7 +790,8 @@ function resolveClickTarget(pageIndex, x, y) {
 function findRegionForPart(pageIndex, part, x, y) {
   return hitMap.find(
     (r) => r.page === pageIndex && r.part === part && x >= r.x0 - 5 && x <= r.x1
-      && y >= r.topY - 45 && y <= r.topY + 85,
+      && y >= r.topY - hitBandAbove(layoutStaveGap)
+      && y <= r.topY + hitBandBelow(layoutStaveGap),
   );
 }
 
@@ -1504,10 +1531,6 @@ document.addEventListener('keydown', (e) => {
       pendingGlissandoStart = null;
       setStatus('グリッサンドを取り消しました');
     }
-    if (insertCaret) {
-      clearInsertCaret();
-      render();
-    }
   }
 });
 
@@ -1536,7 +1559,6 @@ function onPageMouseDown(e, pageDiv, pageIndex) {
     clearRangeSelection();
     clearMeasureSelection();
     clearSelection();
-    clearInsertCaret();
     toggleTimeSigDisplay();
     return;
   }
@@ -1546,7 +1568,6 @@ function onPageMouseDown(e, pageDiv, pageIndex) {
     clearRangeSelection();
     clearMeasureSelection();
     clearSelection();
-    clearInsertCaret();
     if (markRegion.kind === 'chord') {
       const measure = score.measures[markRegion.measureIndex];
       const note = measure.lower.find((n) => n.id === markRegion.noteId);
@@ -1574,13 +1595,8 @@ function onPageMouseDown(e, pageDiv, pageIndex) {
     clearRangeSelection();
     clearMeasureSelection();
     clearSelection();
-    clearInsertCaret();
     return;
   }
-  // Clicking an actual note is unrelated to the insertion caret (below) —
-  // only a click that lands on truly empty staff space should ever leave it
-  // in place waiting for its confirming second click.
-  if (existing) clearInsertCaret();
 
   // Ctrl/Cmd+click toggles a note (or one tone of a chord) in/out of the
   // multi-selection, Office-style, instead of the normal single-select —
@@ -1801,7 +1817,7 @@ document.addEventListener('mousemove', (e) => {
       dragging.region.part, dragging.startMeasureIndex, dragging.startNoteIndex, region.measureIndex, endIndex,
     );
     noteRangeSelection = range.length >= 2 ? range : null;
-    render();
+    renderSoon();
     return;
   }
   const index = indexForY(y, dragging.region.topY, dragging.region.step);
@@ -1811,8 +1827,8 @@ document.addEventListener('mousemove', (e) => {
   const existingAccidental = parseKey(tone.key).accidental;
   const key = buildKey(letter, existingAccidental, octave);
   if (tone.key !== key) {
-    tone.key = key;
-    render();
+    setTonePitch(dragging.note, tone, key);
+    renderSoon();
   }
 });
 
@@ -1820,35 +1836,23 @@ document.addEventListener('mouseup', () => {
   if (rangeDragging) {
     rangeDragging = null;
   } else if (pendingClick) {
-    const { pageIndex, region, localX, localY } = pendingClick;
+    const { region, localX, localY } = pendingClick;
     pendingClick = null;
     clearRangeSelection();
     clearMeasureSelection();
-    // A blinking caret already sitting on (about) this exact spot means this
-    // is the *confirming* second click — insert for real. Otherwise this
-    // first click just places/moves the caret here without inserting yet
-    // (see clearInsertCaret/renderInsertCaret).
-    const CARET_CONFIRM_TOLERANCE = 12;
-    const confirmingCaret = insertCaret
-      && insertCaret.measureIndex === region.measureIndex
-      && insertCaret.part === region.part
-      && Math.hypot(localX - insertCaret.localX, localY - insertCaret.localY) <= CARET_CONFIRM_TOLERANCE;
-    if (confirmingCaret) {
-      clearInsertCaret();
-      const slotNote = !selectedRest ? findSameSlotNote(region, localX) : null;
-      if (slotNote) {
-        addPitchToNote(slotNote, region, localY);
-      } else {
-        insertNote(region, localX, localY);
-      }
-      showFloatingToolbox();
-      syncNoteControlsFromSelection();
+    // One click places the note — no confirming second click. (There used to
+    // be a blinking caret that a first click planted and a second click
+    // confirmed; it made every note take two clicks for no real benefit.)
+    // insertNote/addPitchToNote leave the new note selected, so it shows up
+    // highlighted and the previous note's highlight goes away on its own.
+    const slotNote = !selectedRest ? findSameSlotNote(region, localX) : null;
+    if (slotNote) {
+      addPitchToNote(slotNote, region, localY);
     } else {
-      insertCaret = {
-        measureIndex: region.measureIndex, part: region.part, page: pageIndex, localX, localY,
-      };
-      render();
+      insertNote(region, localX, localY);
     }
+    showFloatingToolbox();
+    syncNoteControlsFromSelection();
   }
   if (dragging) {
     if (dragging.axis === 'range') {
@@ -1857,7 +1861,14 @@ document.addEventListener('mouseup', () => {
       dragging = null;
     } else {
       let changed = false;
-      if (dragging.wasRest && dragging.note.isRest) {
+      // A placeholder rest left behind by the N連符 flow exists precisely to
+      // be filled in, so a plain click converts it. An ordinary rest is real
+      // content: converting that on a bare click meant a rest could never
+      // just be *selected* (to change its duration, or delete it) without
+      // first turning into a note, so it takes an actual pitch drag.
+      const fillsRest = dragging.wasRest && dragging.note.isRest
+        && (dragging.note.isPlaceholder || dragging.moved);
+      if (fillsRest) {
         dragging.note.isRest = false;
         delete dragging.note.isPlaceholder;
         setStatus('休符を音符にしました');
@@ -1886,7 +1897,6 @@ document.querySelector('.score-scroll').addEventListener('mousedown', (e) => {
   clearMeasureSelection();
   clearSelection();
   deselectShapeAndField();
-  if (insertCaret) { clearInsertCaret(); render(); }
 });
 
 // Parses a 'tuplet3' / 'tuplet5' / 'tuplet7' link value into its note count.
@@ -1914,13 +1924,19 @@ function findInsertIndex(region, localX) {
 // capacity: any notes past the point where it would overflow are moved to
 // the front of the next measure's same part (creating one at the end of the
 // score if needed), then the same check repeats there — so an insertion far
-// from the end can ripple forward through several measures. This is what
-// makes a measure's declared capacity a soft wrapping point rather than a
-// hard limit, same as inserting a note mid-measure in mainstream notation
-// software (Finale, Sibelius, Dorico, MuseScore) reflows everything after it
-// instead of simply refusing the insertion.
+// from the end can ripple forward through several measures.
+//
+// This is Finale's "keep moving the extra notes until all measures contain
+// the correct number of beats" option (see the There Are Too Many Beats In
+// This Measure dialog), and it is now used ONLY as the explicit Rebar step
+// after a time-signature change — never as a silent consequence of an edit.
+// Ordinary insertions are capacity-checked and refused instead (see
+// fitsInMeasure below).
+//
+// Returns how many notes ended up in a different measure than they started in.
 function cascadeOverflow(startMeasureIndex, part) {
   let idx = startMeasureIndex;
+  let moved = 0;
   while (idx < score.measures.length) {
     const notes = score.measures[idx][part];
     const capacity = measureCapacity(score, idx);
@@ -1931,12 +1947,131 @@ function cascadeOverflow(startMeasureIndex, part) {
       if (used + beats > capacity + 1e-6) { splitAt = i; break; }
       used += beats;
     }
-    if (splitAt === -1) return;
+    if (splitAt === -1) return moved;
     const overflow = notes.splice(splitAt);
+    moved += overflow.length;
     if (idx + 1 >= score.measures.length) score.measures.push(createEmptyMeasure());
     score.measures[idx + 1][part] = overflow.concat(score.measures[idx + 1][part]);
     idx += 1;
   }
+  return moved;
+}
+
+// ---------- 小節単位の容量管理 ----------
+//
+// A measure is a container with a fixed capacity, not a soft wrapping point.
+// Editing operations that would exceed it are refused with a message rather
+// than pushing the surplus into the following measure — the old behavior
+// meant one mistyped duration could shift the rest of the piece.
+// (cascadeOverflow above survives only for the Rebar command, which re-flows
+// the whole score on purpose after a time-signature change.)
+
+// Beats already used by `part` in this measure.
+function beatsUsedIn(measureIndex, part) {
+  const measure = score.measures[measureIndex];
+  if (!measure) return 0;
+  return (measure[part] || []).reduce((sum, n) => sum + noteBeats(n), 0);
+}
+
+// How much room is left in one measure's part, in quarter-note beats.
+function remainingCapacity(measureIndex, part) {
+  return measureCapacity(score, measureIndex) - beatsUsedIn(measureIndex, part);
+}
+
+// True when `beats` more would still fit. The epsilon absorbs the rounding
+// that fractional tuplet values (a triplet eighth is 1/3) accumulate.
+function fitsInMeasure(measureIndex, part, beats) {
+  return beats <= remainingCapacity(measureIndex, part) + 1e-6;
+}
+
+function reportMeasureFull(measureIndex) {
+  setStatus(`${measureIndex + 1}小節目にはこれ以上音符を入れられません`);
+}
+
+// Rest durations usable for padding, longest first, so filling a remainder
+// picks the fewest symbols (3 beats -> half + quarter, not three quarters).
+const PAD_REST_DURATIONS = [
+  { duration: 'w', beats: 4 },
+  { duration: 'h', dotted: true, beats: 3 },
+  { duration: 'h', beats: 2 },
+  { duration: 'q', dotted: true, beats: 1.5 },
+  { duration: 'q', beats: 1 },
+  { duration: '8', dotted: true, beats: 0.75 },
+  { duration: '8', beats: 0.5 },
+  { duration: '16', beats: 0.25 },
+];
+
+function makeRest(duration, dotted) {
+  return {
+    id: makeNoteId(),
+    // A rest's stored pitch is only a placeholder: the renderer draws every
+    // rest at its clef's own anchor position (see buildStaveNotes), and this
+    // value is what the note would take if the rest is later dragged into one.
+    keys: [{
+      key: 'b/4', tieToNext: false, slurTo: null, glissandoTo: null,
+    }],
+    duration,
+    dotted: !!dotted,
+    isRest: true,
+    selected: false,
+    dynamic: '',
+    hairpin: null,
+    articulation: '',
+    tupletId: null,
+    tupletCount: null,
+    ...noteAnnotationDefaults(),
+  };
+}
+
+// Completes a part-filled measure with rests so it adds up to a full bar.
+//
+// Called when the user starts writing into the *next* measure: leaving one
+// behind at, say, one beat out of four isn't something you'd ever want in a
+// finished score, and having to place the trailing rests by hand every time
+// is busywork. Only the measure immediately before the one being written to
+// is padded, and only if it already has at least one note — a completely
+// empty measure already reads (and plays) as a bar's rest, so filling it in
+// would just add clutter.
+function padPreviousMeasureWithRests(measureIndex, part) {
+  const prevIndex = measureIndex - 1;
+  if (prevIndex < 0) return 0;
+  const prev = score.measures[prevIndex];
+  if (!prev || (prev[part] || []).length === 0) return 0;
+  let remaining = remainingCapacity(prevIndex, part);
+  if (remaining <= 1e-6) return 0;
+
+  const rests = [];
+  PAD_REST_DURATIONS.forEach((option) => {
+    while (remaining >= option.beats - 1e-6) {
+      rests.push(makeRest(option.duration, option.dotted));
+      remaining -= option.beats;
+    }
+  });
+  if (rests.length === 0) return 0;
+  prev[part].push(...rests);
+  return rests.length;
+}
+
+// Re-flows every part of the whole score against the current measure
+// capacities. Used after the time signature or pickup length changes, since
+// measures filled under the old signature can hold more (or less) than the
+// new one allows — Finale's Utilities ▸ Rebar, which it also runs
+// automatically when the meter changes.
+function rebarWholeScore() {
+  let moved = 0;
+  PARTS.forEach((part) => { moved += cascadeOverflow(0, part); });
+  return moved;
+}
+
+// True when some measure currently holds more than its capacity allows —
+// checked before offering to rebar, so an unchanged score doesn't prompt.
+function hasOverfullMeasure() {
+  return score.measures.some((measure, measureIndex) => {
+    const capacity = measureCapacity(score, measureIndex);
+    return PARTS.some(
+      (part) => (measure[part] || []).reduce((sum, n) => sum + noteBeats(n), 0) > capacity + 1e-6,
+    );
+  });
 }
 
 // Inserting a note while N連符 is toggled in the ribbon (see setSelectedLink)
@@ -1982,14 +2117,36 @@ function insertNote(region, x, y) {
     for (let i = 0; i < tupletCount - 1; i += 1) {
       notesToInsert.push(makeNote({ isRest: true, isPlaceholder: true, tupletId, tupletCount }));
     }
-    setSelectedLink(null);
   }
 
+  // The measure is a fixed-size container: if what's being placed doesn't fit,
+  // nothing is placed and the user is told. (This used to push the surplus
+  // into the following measure and cascade from there, so one wrong duration
+  // could shift the whole rest of the piece.)
+  const addedBeats = notesToInsert.reduce((sum, n) => sum + noteBeats(n), 0);
+  if (!fitsInMeasure(region.measureIndex, region.part, addedBeats)) {
+    reportMeasureFull(region.measureIndex);
+    return;
+  }
+  if (tupletCount) setSelectedLink(null);
+
+  // Moving on to a new measure finishes the previous one off with rests, so a
+  // half-written bar doesn't stay short.
+  const padded = padPreviousMeasureWithRests(region.measureIndex, region.part);
+
   measure[region.part].splice(insertIndex, 0, ...notesToInsert);
-  cascadeOverflow(region.measureIndex, region.part);
+
+  // The note just placed becomes the selection, so it shows highlighted and
+  // whatever was selected before is released — placing notes one after another
+  // moves the highlight along with you.
+  selected = {
+    measureIndex: region.measureIndex, part: region.part, noteId: notesToInsert[0].id, keyIndex: 0,
+  };
 
   pushHistory();
   render();
+  syncNoteControlsFromSelection();
+  if (padded > 0) setStatus(`${region.measureIndex}小節目の残りを休符で埋めました`);
   if (!selectedRest) playInsertedNoteBlip(region.part, key);
 }
 
@@ -2137,9 +2294,13 @@ function pasteNotesAtSelection() {
   const measure = score.measures[selected.measureIndex];
   const notes = measure[selected.part];
   const insertIndex = notes.findIndex((n) => n.id === selected.noteId);
-  const clones = noteClipboard.map((n) => ({ ...structuredClone(n), id: makeNoteId() }));
+  const clones = cloneNotesWithFreshIds(noteClipboard);
+  const addedBeats = clones.reduce((sum, n) => sum + noteBeats(n), 0);
+  if (!fitsInMeasure(selected.measureIndex, selected.part, addedBeats)) {
+    reportMeasureFull(selected.measureIndex);
+    return;
+  }
   notes.splice(insertIndex === -1 ? notes.length : insertIndex, 0, ...clones);
-  cascadeOverflow(selected.measureIndex, selected.part);
   pushHistory();
   render();
   setStatus(`${clones.length}個の音符をペーストしました`);
@@ -2208,7 +2369,7 @@ document.addEventListener('keydown', (e) => {
     const tone = getSelectedTone();
     if (!note || note.isRest || !tone) return;
     e.preventDefault();
-    tone.key = transposeKey(tone.key, e.key === 'ArrowUp' ? 1 : -1);
+    setTonePitch(note, tone, transposeKey(tone.key, e.key === 'ArrowUp' ? 1 : -1));
     sortNoteKeys(note);
     pushHistory();
     render();
@@ -2348,14 +2509,8 @@ document.querySelectorAll('[data-link]').forEach((btn) => {
 // スラー connects two tones the user picks explicitly, since a slur (unlike
 // a tie) can span notes of different pitches.
 
-// Same-staff-position identity (letter+octave, ignoring accidental) for a
-// slur's stored target — must match staffRenderer.js's pitchId() format
-// exactly, since that's what resolves this link back into a specific tone
-// at render time.
-function pitchKeyOf(key) {
-  const { letter, octave } = parseKey(key);
-  return `${letter.toLowerCase()}/${octave}`;
-}
+// pitchKeyOf (the same-staff-position identity a slur/glissando target is
+// stored as) now lives in noteLinks.js alongside the rules that consume it.
 
 function applyTieToSelectedTone() {
   const note = getSelectedNote();
@@ -2387,22 +2542,33 @@ function applyTieToSelectedTone() {
   const matchInNext = next && !next.isRest && next.keys.some((t) => pitchKeyOf(t.key) === pk);
 
   if (!matchInNext) {
-    // Tying a SECOND tone of the same chord (e.g. tie the G, then separately
-    // tie the D) must land both tones on the same destination note, not two
-    // separate single-key notes at the same beat — the latter is an invalid
-    // same-voice collision that silently breaks the notation (VexFlow can
-    // only place one of them, so the other tie's curve looks like it never
-    // rendered). If `next` was already auto-created by an earlier tie from
-    // this same chord (partialChordNote, still the same written duration),
-    // add this tone to it instead of creating a rival note.
-    const canMergeIntoNext = next && !next.isRest && next.partialChordNote
-      && next.duration === selectedDuration && next.dotted === selectedDotted;
-    if (canMergeIntoNext) {
+    if (next && !next.isRest) {
+      // There IS a next note, it just doesn't carry this pitch yet. A tie
+      // means "this pitch keeps sounding through the next note", so the pitch
+      // joins that note — which is both musically right and the only way to
+      // tie a second tone of a chord without breaking the notation.
+      //
+      // This used to insert a *separate* single-pitch note at the same beat
+      // instead (flagged partialChordNote), leaving two notes competing for
+      // one rhythmic position: VexFlow can only place one of them, so the
+      // other tie looked like it had never rendered, and the duplicate went
+      // on to confuse spacing and playback. Worse, migrateScore stripped the
+      // flag on load, so a saved-and-reopened score behaved differently from
+      // the same score before saving.
       next.keys.push({
         key: tone.key, tieToNext: false, slurTo: null, glissandoTo: null,
       });
       sortNoteKeys(next);
     } else {
+      // Nothing follows (or only a rest does), so the note to tie into has to
+      // be created — same pitch, current ribbon duration. Like any other
+      // insertion this respects the measure's capacity: if there's no room,
+      // the tie is refused rather than pushing the surplus onwards.
+      const newBeats = durationBeats(selectedDuration, selectedDotted, 1);
+      if (!fitsInMeasure(selected.measureIndex, selected.part, newBeats)) {
+        reportMeasureFull(selected.measureIndex);
+        return;
+      }
       const newNote = {
         id: makeNoteId(),
         keys: [{
@@ -2411,13 +2577,6 @@ function applyTieToSelectedTone() {
         duration: selectedDuration,
         dotted: selectedDotted,
         isRest: false,
-        // If the selected note is a chord, this new note only concerns this
-        // one tone — `partialChordNote` marks it so it doesn't cut off any of
-        // the chord's *other* tones' ties in flight (see its use in
-        // playback.js); it briefly means this beat and the chord's other real
-        // continuation note overlap in the written rhythm, but that's
-        // preferable to silently dropping a tie.
-        partialChordNote: note.keys.length > 1,
         selected: false,
         dynamic: '',
         hairpin: null,
@@ -2426,14 +2585,7 @@ function applyTieToSelectedTone() {
         tupletCount: null,
         ...noteAnnotationDefaults(),
       };
-      // No matching pitch right after this note — insert one automatically
-      // (same pitch, current ribbon duration), tied, instead of requiring the
-      // user to type it themselves first. cascadeOverflow pushes it (and
-      // whatever it displaces) into the next measure if this one is already
-      // full, creating one at the end of the score if needed — same as how a
-      // real tied note would be written across the barline.
       siblings.splice(noteIdx + 1, 0, newNote);
-      cascadeOverflow(selected.measureIndex, selected.part);
     }
   }
   tone.tieToNext = true;
@@ -2580,7 +2732,12 @@ document.getElementById('btn-remove-measure').addEventListener('click', () => {
 const zoomPercentEl = document.getElementById('zoom-percent');
 function setZoom(newZoom) {
   zoom = Math.max(0.5, Math.min(2, newZoom));
-  render();
+  // Zoom is purely a CSS transform on the container: the score's own layout
+  // doesn't change, and hit-testing reads its scale factor back off the
+  // rendered page's bounding box (see toLocalCoords), so nothing needs
+  // redrawing. Calling render() here rebuilt every page's SVG from scratch —
+  // ten times a second while a zoom button was held down.
+  scoreContainer.style.transform = `scale(${zoom})`;
   zoomPercentEl.textContent = `${Math.round(zoom * 100)}%`;
 }
 
@@ -2694,10 +2851,14 @@ function schedulePlaybackHighlights(startTime = 0) {
     if (evEnd <= startTime) return; // already finished before the start point
     const offset = Math.max(0, ev.time - startTime);
     const remaining = evEnd - Math.max(ev.time, startTime);
-    const targets = ev.ids.map((id) => findNoteHitById(id)).filter(Boolean);
-    if (targets.length === 0) return;
     const shownEls = [];
     const onTimer = setTimeout(() => {
+      // Positions are looked up when the highlight is actually drawn, not when
+      // it was scheduled. Editing the score mid-playback rebuilds hitMap and
+      // recreates every page element, so coordinates captured up front would
+      // put the box somewhere the note no longer is.
+      const targets = ev.ids.map((id) => findNoteHitById(id)).filter(Boolean);
+      if (targets.length === 0) return;
       const pages = Array.from(scoreContainer.querySelectorAll('.score-page'));
       targets.forEach(({ region, note }) => {
         const pageDiv = pages[region.page];
@@ -2806,18 +2967,80 @@ pauseBtn.addEventListener('click', () => {
   setPlayButtonState('paused');
 });
 
+// ---------- 印刷 / PDF書き出し ----------
+//
+// The editing chrome (quickbar, ribbon, floating toolbox, measure numbers,
+// caret, highlight boxes) is hidden by @media print in style.css, but a few
+// editing-only marks are drawn *into the score itself* rather than as
+// separate elements — most visibly, the selected notehead is painted blue by
+// VexFlow (see buildStaveNotes' setKeyStyle). CSS can't reach inside that, so
+// the selection has to actually be cleared and the score redrawn before
+// printing, or the selected note prints blue.
+// The print stylesheet keys off `html.printing` rather than `@media print`,
+// because 印刷 (window.print()) and PDF書き出し (the main process calling
+// printToPDF on this page) don't both put the renderer into print media.
+// Toggling a class covers both, and makes the print layout inspectable on
+// screen too.
+function enterPrintLayout() {
+  document.documentElement.classList.add('printing');
+}
+
+function leavePrintLayout() {
+  document.documentElement.classList.remove('printing');
+}
+
+function clearAllSelectionsForPrint() {
+  const hadAnything = selected || multiSelected.length || noteRangeSelection
+    || rangeSelection || selectedMeasureIndex !== null;
+  if (!hadAnything) return;
+  selected = null;
+  multiSelected = [];
+  noteRangeSelection = null;
+  rangeSelection = null;
+  selectedMeasureIndex = null;
+  pendingSlurStart = null;
+  pendingGlissandoStart = null;
+  deselectShapeAndField();
+  updateRangeLabel();
+  render();
+  syncNoteControlsFromSelection();
+}
+
+// Fires for any OS/browser-initiated print (and for window.print() below), so
+// even a print started outside the ribbon gets the right layout.
+window.addEventListener('beforeprint', () => {
+  clearAllSelectionsForPrint();
+  enterPrintLayout();
+});
+window.addEventListener('afterprint', leavePrintLayout);
+
 document.getElementById('btn-print').addEventListener('click', () => {
+  clearAllSelectionsForPrint();
+  enterPrintLayout();
   window.print();
+  // afterprint restores the screen layout on its own, but not every platform
+  // fires it reliably — clear it here too so the app can't get stuck in print
+  // layout with no ribbon.
+  leavePrintLayout();
 });
 
 document.getElementById('btn-export-pdf').addEventListener('click', async () => {
   if (!window.electronAPI) { setStatus('PDF書き出しはアプリ版でのみ利用できます'); return; }
+  // printToPDF drives the page from the main process and never fires
+  // beforeprint, so the print layout has to be applied explicitly here.
+  clearAllSelectionsForPrint();
+  enterPrintLayout();
+  // Let the browser paint the print layout before the main process snapshots
+  // the page — printToPDF reads the live document, not a queued frame.
+  await new Promise((resolve) => { requestAnimationFrame(() => requestAnimationFrame(resolve)); });
   setStatus('PDFを書き出しています…');
   try {
     const result = await window.electronAPI.exportPdf(`${score.title || 'score'}.pdf`);
     setStatus(result.canceled ? '' : `PDFを書き出しました: ${result.filePath}`);
   } catch (err) {
     setStatus('PDFの書き出しに失敗しました');
+  } finally {
+    leavePrintLayout();
   }
 });
 
@@ -2833,18 +3056,55 @@ function download(filename, blobParts, type) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// markSelection() stamps the current selection onto the note objects
+// themselves (that's how the renderer knows what to highlight), so a plain
+// JSON.stringify(score) writes editing state into the saved file — bloating
+// it and making a reopened score come back with a stale highlight. Strip
+// those transient fields out of the copy that gets written.
+const TRANSIENT_NOTE_FIELDS = ['selected', 'selectedKeyIndex', 'multiSelectedKeyIndices', 'rangeSelected'];
+
+function scoreForSave() {
+  const copy = structuredClone(score);
+  (copy.measures || []).forEach((measure) => {
+    PARTS.forEach((part) => {
+      (measure[part] || []).forEach((n) => {
+        TRANSIENT_NOTE_FIELDS.forEach((field) => { delete n[field]; });
+      });
+    });
+  });
+  return copy;
+}
+
 function saveScoreFile() {
-  download(`${score.title || 'score'}.json`, [JSON.stringify(score, null, 2)], 'application/json');
+  download(`${score.title || 'score'}.json`, [JSON.stringify(scoreForSave(), null, 2)], 'application/json');
   savedHistoryIndex = historyIndex;
+}
+
+// True when the score has edits that haven't been written to a file — the same
+// undo-position check the close-confirmation dialog uses.
+function hasUnsavedChanges() {
+  return historyIndex !== savedHistoryIndex;
+}
+
+// Opening a file or starting from a template replaces the whole score. Closing
+// the window already asks before discarding unsaved edits; these two didn't,
+// and silently threw the current score away.
+async function confirmDiscardUnsaved(what) {
+  if (!hasUnsavedChanges()) return true;
+  return showConfirmModal(`保存していない変更があります。破棄して${what}しますか?`);
 }
 
 document.getElementById('btn-save').addEventListener('click', saveScoreFile);
 
 const openInput = document.getElementById('open-input');
 document.getElementById('btn-open').addEventListener('click', () => openInput.click());
-openInput.addEventListener('change', () => {
+openInput.addEventListener('change', async () => {
   const file = openInput.files[0];
+  // Cleared up front (not after reading) so picking the same file again still
+  // fires a change event, and so an early return can't leave it selected.
+  openInput.value = '';
   if (!file) return;
+  if (!(await confirmDiscardUnsaved('開く'))) return;
   const reader = new FileReader();
   reader.onload = () => {
     try {
@@ -2869,7 +3129,6 @@ openInput.addEventListener('change', () => {
     }
   };
   reader.readAsText(file);
-  openInput.value = '';
 });
 
 document.getElementById('btn-export-midi').addEventListener('click', () => {
@@ -2889,23 +3148,45 @@ titleInput.value = score.title;
 titleInput.addEventListener('change', () => {
   score.title = titleInput.value || '無題の楽譜';
   pushHistory();
+  // The title also appears on page 1 of the score itself (see
+  // renderTitleHeader), which only redraws from render() — without this the
+  // printed title stayed at its old value until some unrelated edit happened
+  // to trigger a redraw.
+  render();
 });
 
 // --- 拍子記号 ---
 
 const timeSigInput = document.getElementById('timesig-input');
 timeSigInput.value = score.timeSig;
-document.getElementById('btn-apply-timesig').addEventListener('click', () => {
+document.getElementById('btn-apply-timesig').addEventListener('click', async () => {
   const value = timeSigInput.value.trim();
   if (!isValidTimeSig(value)) {
     setStatus('拍子記号の形式が正しくありません(例: 4/4)');
     return;
   }
+  const previous = score.timeSig;
   score.timeSig = value;
   const full = beatsPerMeasure(score);
   if (score.pickupBeats > full) {
     score.pickupBeats = full;
     pickupInput.value = full;
+  }
+  // Measures filled under the old signature can hold more than the new one
+  // allows (4/4 -> 3/4 leaves every measure a beat over). Previously nothing
+  // re-checked them: the notes stayed put, spilled past their barlines on the
+  // page, and overlapped the next measure during playback. Offer the rebar
+  // instead of silently doing either thing.
+  if (hasOverfullMeasure()) {
+    const ok = await showConfirmModal(
+      `拍子を ${previous} から ${value} に変更したため、拍数が入りきらない小節があります。音符を小節をまたいで詰め直しますか?(キャンセルすると、はみ出したまま残します)`,
+    );
+    if (ok) {
+      const moved = rebarWholeScore();
+      setStatus(`拍子を変更し、${moved}個の音符を詰め直しました`);
+    } else {
+      setStatus('拍子を変更しました(音符はそのままです)');
+    }
   }
   pushHistory();
   render();
@@ -2915,11 +3196,22 @@ document.getElementById('btn-apply-timesig').addEventListener('click', () => {
 
 const pickupInput = document.getElementById('pickup-input');
 pickupInput.value = score.pickupBeats || 0;
-pickupInput.addEventListener('change', () => {
+pickupInput.addEventListener('change', async () => {
   const full = beatsPerMeasure(score);
   const value = Math.max(0, Math.min(full, Number(pickupInput.value) || 0));
   pickupInput.value = value;
   score.pickupBeats = value;
+  // Shortening the pickup can leave measure 1 over its new capacity — same
+  // situation as a time signature change, handled the same way.
+  if (hasOverfullMeasure()) {
+    const ok = await showConfirmModal(
+      '弱起の拍数を変更したため、拍数が入りきらない小節があります。音符を小節をまたいで詰め直しますか?(キャンセルすると、はみ出したまま残します)',
+    );
+    if (ok) {
+      const moved = rebarWholeScore();
+      setStatus(`${moved}個の音符を詰め直しました`);
+    }
+  }
   pushHistory();
   render();
 });
@@ -3198,12 +3490,26 @@ function targetMeasure() {
 // measure-number right-click menu share the same behavior (including: a
 // "終止線" (final barline) truncates every measure after it, since nothing
 // should follow the end of the piece).
-function setBarlineEnd(measureIndex, value) {
+async function setBarlineEnd(measureIndex, value) {
   const measure = score.measures[measureIndex];
   if (!measure) return;
-  measure.barlineEnd = value;
   if (value === 'final' && measureIndex < score.measures.length - 1) {
+    const removed = score.measures.slice(measureIndex + 1);
+    // Setting a final barline in the middle of a piece throws away everything
+    // after it. That's the intended behavior, but doing it silently meant one
+    // menu click could delete most of a score with no warning — so confirm
+    // whenever the measures being dropped actually contain music.
+    const hasMusic = removed.some((m) => PARTS.some((p) => (m[p] || []).length > 0));
+    if (hasMusic) {
+      const ok = await showConfirmModal(
+        `終止線より後の${removed.length}小節(音符を含む)を削除します。よろしいですか?`,
+      );
+      if (!ok) return;
+    }
+    measure.barlineEnd = value;
     score.measures.length = measureIndex + 1;
+  } else {
+    measure.barlineEnd = value;
   }
   pushHistory();
   render();
@@ -3266,6 +3572,18 @@ function showMeasureContextMenu(clientX, clientY, measureIndex) {
       onClick: () => toggleLineBreak(measureIndex),
     },
     { separator: true },
+    {
+      label: 'n番括弧',
+      submenu: [
+        { label: 'なし', active: !measure.volta, onClick: () => setVolta(measureIndex, null) },
+        ...[1, 2, 3, 4, 5].map((n) => ({
+          label: `${n}番`,
+          active: !!(measure.volta && measure.volta.number === n),
+          onClick: () => setVolta(measureIndex, n),
+        })),
+      ],
+    },
+    { separator: true },
     { header: 'マーカー' },
     { label: 'なし', active: !measure.marker, onClick: () => setMarker(measureIndex, '') },
     { label: 'Segno', active: measure.marker === 'Segno', onClick: () => setMarker(measureIndex, 'Segno') },
@@ -3308,13 +3626,25 @@ document.getElementById('btn-transpose').addEventListener('click', () => {
     return;
   }
   if (steps === 0) { setStatus('度数を入力してください'); return; }
+  // Transposing moves every tone in the region at once. Rather than
+  // retargeting incoming links one tone at a time (which would rescan the
+  // whole score per note), the moved notes are collected first and every
+  // スラー/グリッサンド that lands on one has its stored pitch shifted by the
+  // same interval in a single pass afterwards. Without this, transposing a
+  // region silently deleted all the slurs and glissandos ending inside it.
+  const movedNoteIds = new Set();
   for (let i = from; i <= to; i++) {
     PARTS.forEach((part) => {
       score.measures[i][part].forEach((n) => {
-        if (!n.isRest) n.keys.forEach((tone) => { tone.key = transposeKey(tone.key, steps); });
+        if (n.isRest) return;
+        movedNoteIds.add(n.id);
+        n.keys.forEach((tone) => { tone.key = transposeKey(tone.key, steps); });
       });
     });
   }
+  retargetLinksAfterTranspose(
+    score, PARTS, movedNoteIds, (pk) => pitchKeyOf(transposeKey(pk, steps)),
+  );
   pushHistory();
   render();
   setStatus(`${from + 1}〜${to + 1}小節目を${steps}度移調しました`);
@@ -3366,9 +3696,26 @@ function doRangePaste(targetStartOverride) {
   while (score.measures.length < targetStart + clipboard.measures.length) {
     score.measures.push(createEmptyMeasure());
   }
+  // This paste *replaces* each target measure's contents, so what has to fit
+  // is the copied measure's own total against the target's capacity — which
+  // can differ (pasting an ordinary measure onto the shorter pickup measure).
+  const tooLong = clipboard.measures.findIndex((notes, offset) => {
+    const beats = notes.reduce((sum, n) => sum + noteBeats(n), 0);
+    return beats > measureCapacity(score, targetStart + offset) + 1e-6;
+  });
+  if (tooLong !== -1) {
+    reportMeasureFull(targetStart + tooLong);
+    return;
+  }
+  // Cloned as one flat batch rather than measure by measure, so that a
+  // タイ/スラー/グリッサンド running *between* two copied measures is rewritten
+  // to point at the copies instead of at the notes it was copied from.
+  const flatClones = cloneNotesWithFreshIds(clipboard.measures.flat());
+  let cursor = 0;
   clipboard.measures.forEach((notes, offset) => {
     const targetIndex = targetStart + offset;
-    score.measures[targetIndex][clipboard.part] = notes.map((n) => ({ ...structuredClone(n), id: makeNoteId() }));
+    score.measures[targetIndex][clipboard.part] = flatClones.slice(cursor, cursor + notes.length);
+    cursor += notes.length;
   });
   pushHistory();
   render();
@@ -3438,14 +3785,19 @@ function deleteSelectedNoteRange() {
 
 // Inserts a deep copy of noteClipboard's notes into `region`'s measure/part
 // at whichever index localX lands closest to (same left-to-right insertion
-// logic as insertNote), cascading overflow into later measures if needed.
+// logic as insertNote). Refused outright if the measure has no room, like any
+// other insertion.
 function pasteNotesAtPosition(region, localX) {
   if (!noteClipboard || !noteClipboard.length) { setStatus('コピーした音符がありません'); return; }
   const measure = score.measures[region.measureIndex];
   const insertIndex = findInsertIndex(region, localX);
-  const clones = noteClipboard.map((n) => ({ ...structuredClone(n), id: makeNoteId() }));
+  const clones = cloneNotesWithFreshIds(noteClipboard);
+  const addedBeats = clones.reduce((sum, n) => sum + noteBeats(n), 0);
+  if (!fitsInMeasure(region.measureIndex, region.part, addedBeats)) {
+    reportMeasureFull(region.measureIndex);
+    return;
+  }
   measure[region.part].splice(insertIndex, 0, ...clones);
-  cascadeOverflow(region.measureIndex, region.part);
   pushHistory();
   render();
   setStatus(`${clones.length}個の音符をペーストしました`);
@@ -3528,6 +3880,71 @@ function noteAttributeSubmenus() {
   ];
 }
 
+// Removes the N連符 grouping from whichever tuplet(s) the given notes belong
+// to — the whole group at once, since a tuplet is only meaningful as a set.
+// Until this existed there was no way to undo a 連符 short of deleting the
+// notes and placing them again.
+function clearTupletForNotes(refs) {
+  const tupletIds = new Set();
+  refs.forEach((r) => {
+    const measure = score.measures[r.measureIndex];
+    const note = measure && (measure[r.part] || []).find((n) => n.id === r.noteId);
+    if (note && note.tupletId) tupletIds.add(note.tupletId);
+  });
+  if (tupletIds.size === 0) { setStatus('連符になっている音符を選択してください'); return; }
+  // Ungrouping restores each note's full written duration (a triplet eighth
+  // goes from 1/3 to 1/2 of a beat), so a measure that was exactly full as a
+  // tuplet no longer fits. Check every affected measure before changing
+  // anything, so the operation either applies completely or not at all.
+  const growth = new Map(); // "measureIndex|part" -> extra beats
+  score.measures.forEach((measure, measureIndex) => {
+    PARTS.forEach((part) => {
+      (measure[part] || []).forEach((n) => {
+        if (!n.tupletId || !tupletIds.has(n.tupletId)) return;
+        const extra = durationBeats(n.duration, n.dotted, 1) - noteBeats(n);
+        const key = `${measureIndex}|${part}`;
+        growth.set(key, (growth.get(key) || 0) + extra);
+      });
+    });
+  });
+  const overfull = [...growth.entries()].find(([key, extra]) => {
+    const [measureIndex, part] = key.split('|');
+    return !fitsInMeasure(Number(measureIndex), part, extra);
+  });
+  if (overfull) {
+    setStatus(`${Number(overfull[0].split('|')[0]) + 1}小節目に入りきらないため、連符を解除できません`);
+    return;
+  }
+
+  const touched = [];
+  score.measures.forEach((measure, measureIndex) => {
+    PARTS.forEach((part) => {
+      let changed = false;
+      (measure[part] || []).forEach((n) => {
+        if (!n.tupletId || !tupletIds.has(n.tupletId)) return;
+        n.tupletId = null;
+        n.tupletCount = null;
+        changed = true;
+      });
+      if (changed) touched.push({ measureIndex, part });
+    });
+  });
+  multiSelected = [];
+  pushHistory();
+  render();
+  setStatus('連符を解除しました');
+}
+
+// True when at least one of the given notes is part of a tuplet — used to
+// show the 解除 menu item only where it would actually do something.
+function refsIncludeTuplet(refs) {
+  return refs.some((r) => {
+    const measure = score.measures[r.measureIndex];
+    const note = measure && (measure[r.part] || []).find((n) => n.id === r.noteId);
+    return !!(note && note.tupletId);
+  });
+}
+
 function showNoteRangeContextMenu(clientX, clientY) {
   const refs = getActiveNoteSelectionRefs();
   const attributeSubmenus = refs.length === 1 ? noteAttributeSubmenus() : [];
@@ -3535,6 +3952,9 @@ function showNoteRangeContextMenu(clientX, clientY) {
     { header: `${refs.length}個の音符を選択中` },
     { label: 'コピー', onClick: copySelectedNotes },
     { label: '削除', onClick: deleteSelectedNoteRange },
+    ...(refsIncludeTuplet(refs)
+      ? [{ label: '連符を解除', onClick: () => clearTupletForNotes(refs) }]
+      : []),
     ...(attributeSubmenus.length ? [{ separator: true }, ...attributeSubmenus] : []),
     { separator: true },
     {
@@ -3666,6 +4086,9 @@ function showMultiSelectContextMenu(clientX, clientY) {
     { label: '3連符', onClick: () => applyMultiTuplet(3) },
     { label: '5連符', onClick: () => applyMultiTuplet(5) },
     { label: '7連符', onClick: () => applyMultiTuplet(7) },
+    ...(refsIncludeTuplet(multiSelected)
+      ? [{ label: '連符を解除', onClick: () => clearTupletForNotes([...multiSelected]) }]
+      : []),
     { separator: true },
     { label: '選択解除', onClick: () => { multiSelected = []; render(); } },
   ]);
@@ -3674,24 +4097,28 @@ function showMultiSelectContextMenu(clientX, clientY) {
 document.getElementById('btn-range-copy').addEventListener('click', doRangeCopy);
 document.getElementById('btn-range-delete').addEventListener('click', doRangeDelete);
 
-// n番括弧 (see drawVoltaBrackets in staffRenderer.js) — applies to whichever
-// measure range is currently selected (範囲選択), regardless of that
-// selection's own `part` (a volta bracket spans the whole system, not one
-// staff), stored on the range's first measure only.
-document.getElementById('btn-volta-apply').addEventListener('click', () => {
-  const range = clampedRangeSelection();
-  if (!range) { setStatus('範囲を選択してください(譜面をドラッグ)'); return; }
-  const number = Number(document.getElementById('volta-number-select').value);
-  score.measures[range.measureStart].volta = { number, span: range.measureEnd - range.measureStart + 1 };
+// n番括弧 (see drawVoltaBrackets in staffRenderer.js) — one bracket covers
+// exactly one measure and is set on a single 対象小節, the same way 小節線 /
+// リピート / マーカー are. A bracket applies to the whole system rather than
+// one staff, so it lives on the measure itself and has no `part`.
+function setVolta(measureIndex, number) {
+  const measure = score.measures[measureIndex];
+  if (!measure) return;
+  measure.volta = number ? { number } : null;
   pushHistory();
   render();
+}
+
+document.getElementById('btn-volta-apply').addEventListener('click', () => {
+  const measure = targetMeasure();
+  if (!measure) return;
+  const number = Number(document.getElementById('volta-number-select').value);
+  setVolta(score.measures.indexOf(measure), number);
 });
 document.getElementById('btn-volta-clear').addEventListener('click', () => {
-  const range = clampedRangeSelection();
-  if (!range) { setStatus('範囲を選択してください(譜面をドラッグ)'); return; }
-  for (let i = range.measureStart; i <= range.measureEnd; i += 1) score.measures[i].volta = null;
-  pushHistory();
-  render();
+  const measure = targetMeasure();
+  if (!measure) return;
+  setVolta(score.measures.indexOf(measure), null);
 });
 document.getElementById('btn-range-paste').addEventListener('click', () => doRangePaste());
 
@@ -3711,22 +4138,28 @@ document.getElementById('btn-save-template').addEventListener('click', () => {
 
 const templateInput = document.getElementById('template-input');
 document.getElementById('btn-load-template').addEventListener('click', () => templateInput.click());
-templateInput.addEventListener('change', () => {
+templateInput.addEventListener('change', async () => {
   const file = templateInput.files[0];
+  templateInput.value = '';
   if (!file) return;
+  if (!(await confirmDiscardUnsaved('新規作成'))) return;
   const reader = new FileReader();
   reader.onload = () => {
     try {
       const tpl = JSON.parse(reader.result);
       const count = Math.max(1, Math.round(tpl.measureCount) || 1);
+      // Built from createEmptyScore() and then overridden, NOT assembled as a
+      // fresh object literal: a template only carries the handful of fields
+      // below, and a score built from just those is missing everything else
+      // the app reads unconditionally (instruments, shapes, the title/composer
+      // font styles, measureWidthScale, …). syncControlsFromScore() reaches
+      // straight into score.instruments[part] and threw on the very next line.
       score = {
-        title: '無題の楽譜',
-        composer: '',
-        lyricist: '',
-        timeSig: tpl.timeSig || '4/4',
+        ...createEmptyScore(),
+        timeSig: tpl.timeSig && isValidTimeSig(tpl.timeSig) ? tpl.timeSig : '4/4',
         keySignature: tpl.keySignature || 'C',
-        pickupBeats: tpl.pickupBeats || 0,
-        clefs: tpl.clefs || { upper: 'treble', lower: 'bass', pedal: 'bass' },
+        pickupBeats: Number(tpl.pickupBeats) || 0,
+        clefs: { ...PART_CLEF, ...(tpl.clefs || {}) },
         measures: Array.from({ length: count }, () => createEmptyMeasure()),
       };
       history = [structuredClone(score)];
@@ -3743,7 +4176,6 @@ templateInput.addEventListener('change', () => {
     }
   };
   reader.readAsText(file);
-  templateInput.value = '';
 });
 
 updateRangeLabel();

@@ -23,9 +23,85 @@ const ACCIDENTAL_OFFSET = {
 // schedule the on-screen "currently playing" highlight on the same clock.
 export const PLAYBACK_LEAD = 0.15;
 
+// 強弱記号 -> MIDI velocity. A dynamic stays in force until the next one, the
+// way it does on the page, so this is tracked per part as playback walks the
+// score rather than applied only to the note it's written on.
+const DYNAMIC_VELOCITY = {
+  pp: 40, p: 55, mp: 70, mf: 85, f: 102, ff: 118,
+};
+export const DEFAULT_VELOCITY = 85;
+
+// アーティキュレーション. Accent/marcato push the attack harder; staccato and
+// staccatissimo shorten the note without moving anything after it (the beat
+// cursor still advances by the full written value). Everything else — fermata,
+// trill, turn, mordent, arpeggio — is notation this simple playback doesn't
+// interpret, and is left alone rather than guessed at.
+const ARTICULATION_VELOCITY_SCALE = { accent: 1.25, marcato: 1.4 };
+const ARTICULATION_DURATION_SCALE = { staccato: 0.5, staccatissimo: 0.35, tenuto: 1 };
+
+function velocityFor(dynamic, articulation, standingVelocity) {
+  const base = (dynamic && DYNAMIC_VELOCITY[dynamic]) || standingVelocity;
+  const scaled = Math.round(base * (ARTICULATION_VELOCITY_SCALE[articulation] || 1));
+  return Math.max(1, Math.min(127, scaled));
+}
+
+// --- グリッサンド ---
+//
+// A glissando is a slide, so it can't play as a single held note. On a keyboard
+// it's performed by running a thumb or nail across the white keys, and that's
+// what's reproduced here: the written start note is replaced by a run of white
+// keys from it up (or down) to the destination, filling exactly the time the
+// start note occupies. The destination itself is left alone — it's a real note
+// in the score and sounds on its own.
+
+// C D E F G A B as pitch classes.
+const WHITE_KEY_PITCH_CLASSES = new Set([0, 2, 4, 5, 7, 9, 11]);
+
+function isWhiteKey(midi) {
+  return WHITE_KEY_PITCH_CLASSES.has(((midi % 12) + 12) % 12);
+}
+
+// White-key MIDI numbers strictly between two pitches, ordered from the start
+// toward the destination.
+function whiteKeysBetween(startMidi, endMidi) {
+  const step = endMidi > startMidi ? 1 : -1;
+  const keys = [];
+  for (let m = startMidi + step; m !== endMidi; m += step) {
+    if (isWhiteKey(m)) keys.push(m);
+  }
+  return keys;
+}
+
+// The pitch a slur/glissando link points at, as a MIDI number. Standing
+// accidentals from that measure aren't tracked here (the link is resolved out
+// of order, ahead of the walk that maintains them) — the key signature is
+// applied, which is enough to land the slide on the right key.
+function linkTargetMidi(noteById, link, keySignature) {
+  const target = noteById.get(link.noteId);
+  if (!target || target.isRest) return null;
+  const tone = (target.keys || []).find((t) => {
+    const { letter, octave } = parseKey(t.key);
+    return `${letter.toLowerCase()}/${octave}` === link.pitchKey;
+  });
+  if (!tone) return null;
+  const { letter, accidental, octave } = parseKey(tone.key);
+  const implied = accidental ? accidental : keySignatureAccidentalForLetter(keySignature, letter);
+  return pitchToMidi(buildKey(letter, implied === 'n' ? '' : implied, octave));
+}
+
 export function pitchToMidi(key) {
   const { letter, accidental, octave } = parseKey(key);
   return (octave + 1) * 12 + LETTER_SEMITONE[letter] + ACCIDENTAL_OFFSET[accidental];
+}
+
+// The MIDI note numbers a playback event sounds. Most events carry written
+// pitches in `keys`; the intermediate steps of a glissando are computed as raw
+// MIDI numbers instead (there's no written note to spell them from), and come
+// through as `midi`. Every consumer — live playback, WAV render, MIDI export —
+// goes through here so both kinds sound.
+export function eventMidiNotes(ev) {
+  if (ev.midi !== undefined) return [ev.midi];
+  return (ev.keys || []).map(pitchToMidi);
 }
 
 // A note typed without an explicit accidental sounds whatever is currently
@@ -60,9 +136,21 @@ export function buildPlaybackEvents(score, bpm = 100) {
   const order = buildPlayOrder(score);
   const events = [];
 
+  // Needed to resolve a グリッサンド's destination, which can be any note
+  // anywhere in the score rather than the next one along.
+  const noteById = new Map();
+  score.measures.forEach((measure) => {
+    PARTS.forEach((part) => {
+      (measure[part] || []).forEach((n) => noteById.set(n.id, n));
+    });
+  });
+
   PARTS.forEach((part) => {
     let time = 0;
     let pendingByPitch = new Map(); // "letter+octave" (pre-accidental) -> still-open event
+    // The dynamic currently in force for this part. Reset per part, not per
+    // measure — a "p" keeps applying until something else is written.
+    let standingVelocity = DEFAULT_VELOCITY;
     order.forEach((measureIndex) => {
       const measure = score.measures[measureIndex];
       const capacity = measureCapacity(score, measureIndex);
@@ -82,6 +170,13 @@ export function buildPlaybackEvents(score, bpm = 100) {
             pendingByPitch = new Map();
           }
         } else {
+          if (n.dynamic && DYNAMIC_VELOCITY[n.dynamic]) {
+            standingVelocity = DYNAMIC_VELOCITY[n.dynamic];
+          }
+          const velocity = velocityFor(n.dynamic, n.articulation, standingVelocity);
+          // Staccato shortens the sound only — beatCursor below still advances
+          // by the full written value, so nothing after it moves.
+          const durationScale = ARTICULATION_DURATION_SCALE[n.articulation] || 1;
           const nextPending = new Map();
           n.keys.forEach((tone) => {
             const { letter, octave } = parseKey(tone.key);
@@ -92,12 +187,64 @@ export function buildPlaybackEvents(score, bpm = 100) {
               pendingByPitch.delete(pid);
               prev.duration += noteDur;
               prev.ids.push(n.id);
-              if (tone.tieToNext) nextPending.set(pid, prev); else events.push(prev);
+              if (tone.tieToNext) {
+                nextPending.set(pid, prev);
+              } else {
+                // A tie makes several written notes one sound, so an
+                // articulation only shortens a note that stands alone.
+                if (prev.ids.length === 1) prev.duration *= durationScale;
+                events.push(prev);
+              }
             } else {
-              const ev = {
-                time: noteStart, duration: noteDur, keys: [resolved], part, ids: [n.id],
-              };
-              if (tone.tieToNext) nextPending.set(pid, ev); else events.push(ev);
+              // A グリッサンド replaces this tone's single sustained sound with
+              // a run of white keys sliding toward its destination, spread
+              // across exactly the time the written note occupies. A tie takes
+              // precedence: a tone that carries on into the next note isn't
+              // sliding anywhere.
+              const glissTargets = !tone.tieToNext && tone.glissandoTo
+                ? (() => {
+                  const endMidi = linkTargetMidi(noteById, tone.glissandoTo, score.keySignature);
+                  if (endMidi === null) return null;
+                  const steps = whiteKeysBetween(pitchToMidi(resolved), endMidi);
+                  return steps.length > 0 ? steps : null;
+                })()
+                : null;
+
+              if (glissTargets) {
+                const slots = glissTargets.length + 1; // the written note, then the run
+                const slotDur = noteDur / slots;
+                events.push({
+                  time: noteStart,
+                  duration: slotDur,
+                  keys: [resolved],
+                  part,
+                  ids: [n.id],
+                  velocity,
+                });
+                glissTargets.forEach((midi, step) => {
+                  events.push({
+                    time: noteStart + slotDur * (step + 1),
+                    duration: slotDur,
+                    midi,
+                    keys: [],
+                    part,
+                    // Attributed to the written note so the on-screen playback
+                    // highlight stays on it for the whole slide.
+                    ids: [n.id],
+                    velocity,
+                  });
+                });
+              } else {
+                const ev = {
+                  time: noteStart,
+                  duration: tone.tieToNext ? noteDur : noteDur * durationScale,
+                  keys: [resolved],
+                  part,
+                  ids: [n.id],
+                  velocity,
+                };
+                if (tone.tieToNext) nextPending.set(pid, ev); else events.push(ev);
+              }
             }
           });
           if (n.partialChordNote) {
@@ -183,8 +330,10 @@ export class Player {
       const duration = Math.max(0.05, evEnd - Math.max(ev.time, startTime));
       const instrument = this.instruments[ev.part];
       const timer = setTimeout(() => {
-        ev.keys.forEach((key) => {
-          instrument.start({ note: pitchToMidi(key), duration, velocity: 100 });
+        eventMidiNotes(ev).forEach((note) => {
+          instrument.start({
+            note, duration, velocity: ev.velocity || DEFAULT_VELOCITY,
+          });
         });
       }, (offset + PLAYBACK_LEAD) * 1000);
       this.timers.push(timer);
@@ -239,9 +388,12 @@ export async function renderScoreToWavBuffer(score, bpm = 100, instrumentNames =
     await instrument.ready;
   }));
   events.forEach((ev) => {
-    ev.keys.forEach((key) => {
+    eventMidiNotes(ev).forEach((note) => {
       instruments[ev.part].start({
-        note: pitchToMidi(key), time: ev.time, duration: Math.max(ev.duration, 0.05), velocity: 100,
+        note,
+        time: ev.time,
+        duration: Math.max(ev.duration, 0.05),
+        velocity: ev.velocity || DEFAULT_VELOCITY,
       });
     });
   });

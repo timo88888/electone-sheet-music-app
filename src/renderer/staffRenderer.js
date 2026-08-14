@@ -54,6 +54,8 @@ const PLACEHOLDER_COLOR = '#e08a1e';
 const A4_RATIO = 297 / 210;
 
 export const LAYOUT = {
+  // Upper bound only — the actual count is worked out per score from how tall
+  // its systems turn out to be (see renderScore's linesPerPage).
   linesPerPage: 4,
   pageWidth: 1050,
   pageHeight: Math.round(1050 * A4_RATIO),
@@ -506,36 +508,29 @@ function findAnchorForBeat(measure, notesHitByPart, beat) {
 // actually has one (see hasVolta in renderScore).
 const VOLTA_BAND_HEIGHT = 20;
 
-// n番括弧 (repeat-ending brackets) — measure.volta = { number, span } marks
-// the FIRST measure of a span-measures-long bracket labelled "N.". Only
-// measures actually on this line get drawn; a bracket whose span runs past
-// the line's last measure (crossing a system break) just draws without its
-// closing downward tick, reading as "continues" rather than abruptly ending
-// mid-air — same convention printed scores use.
+// n番括弧 (repeat-ending brackets) — measure.volta = { number } marks the
+// measure carrying a bracket labelled "N.".
+//
+// Drawn as a 鉤括弧: a downward tick at the left, then a horizontal line to
+// the end of the measure, with NO closing tick on the right. One bracket
+// covers exactly one measure and is set on a single selected measure (see
+// app.js's volta controls).
 function drawVoltaBrackets(ctx, score, measureIndices, measureColumns, lineY) {
   const y = lineY + 4;
   const tickHeight = 7;
   measureIndices.forEach((m) => {
     const measure = score.measures[m];
     if (!measure.volta) return;
-    const startCol = measureColumns[m];
-    if (!startCol) return;
-    const endIndex = m + measure.volta.span - 1;
-    const lastOnLine = measureIndices[measureIndices.length - 1];
-    const clippedEndIndex = Math.min(endIndex, lastOnLine);
-    const endCol = measureColumns[clippedEndIndex];
-    if (!endCol) return;
-    const x0 = startCol.x;
-    const x1 = endCol.x + endCol.width;
+    const col = measureColumns[m];
+    if (!col) return;
     ctx.save();
     ctx.beginPath();
-    ctx.moveTo(x0, y + tickHeight);
-    ctx.lineTo(x0, y);
-    ctx.lineTo(x1, y);
-    if (clippedEndIndex === endIndex) ctx.lineTo(x1, y + tickHeight);
+    ctx.moveTo(col.x, y + tickHeight);
+    ctx.lineTo(col.x, y);
+    ctx.lineTo(col.x + col.width, y);
     ctx.stroke();
     ctx.setFont('Arial', 11, '');
-    ctx.fillText(`${measure.volta.number}.`, x0 + 4, y + 11);
+    ctx.fillText(`${measure.volta.number}.`, col.x + 4, y + 11);
     ctx.restore();
   });
 }
@@ -638,7 +633,7 @@ export function renderScore(container, score, layout = LAYOUT) {
   const pages = [];
 
   const {
-    linesPerPage, pageWidth, pageHeight, pageMargin, systemGap, topMargin,
+    pageWidth, pageHeight, pageMargin, systemGap, topMargin,
     rehearsalBandHeight, measureNumberHeight, clefExtraWidth, timeSigExtraWidth, titleHeaderHeight,
   } = layout;
   // Widened beyond layout's own default when a 上鍵盤 note's ledger lines
@@ -657,6 +652,21 @@ export function renderScore(container, score, layout = LAYOUT) {
 
   const lines = computeLines(score, layout);
   const totalLines = lines.length;
+
+  // How tall one system slot is, and therefore how many fit on a page.
+  //
+  // staveGap grows to clear the score's tallest ledger lines (see
+  // computeRequiredStaveGap), and a score using n番括弧 reserves a band above
+  // every system as well — so a fixed count (this used to be a flat 4) could
+  // silently run the last system off the bottom of the page. Page 1 is the
+  // tightest because of the title block, and the same count is used for every
+  // page so a line's page is still just `floor(line / linesPerPage)`.
+  const lineHeight = staveGap * 2 + systemGap + rehearsalBandHeight + voltaOffset;
+  const usableHeight = pageHeight - topMargin - titleHeaderHeight - pageMargin;
+  const linesPerPage = Math.max(1, Math.min(
+    layout.linesPerPage,
+    Math.floor(usableHeight / lineHeight),
+  ));
   const totalPages = Math.max(1, Math.ceil(totalLines / linesPerPage));
 
   // Cross-measure connectors (ties/slurs/hairpins) are built as soon as both
@@ -729,6 +739,17 @@ export function renderScore(container, score, layout = LAYOUT) {
 
     const renderer = new Renderer(pageDiv, Renderer.Backends.SVG);
     renderer.resize(pageWidth, pageDivHeight);
+    // VexFlow sizes the <svg> with plain width/height attributes, which pin
+    // its contents to one fixed pixel size. Printing scales a page down to
+    // real A4 (see style.css's @media print), and without a viewBox the
+    // drawing inside would keep its original size and get clipped instead of
+    // scaling with the element. Same numbers as the resize above, so this
+    // changes nothing on screen.
+    const svgEl = pageDiv.querySelector('svg');
+    if (svgEl) {
+      svgEl.setAttribute('viewBox', `0 0 ${pageWidth} ${pageDivHeight}`);
+      svgEl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    }
     const ctx = renderer.getContext();
 
     const lineStart = page * linesPerPage;
@@ -867,7 +888,18 @@ export function renderScore(container, score, layout = LAYOUT) {
             (g) => new Tuplet(g.notes, { notesOccupied: g.notesOccupied }),
           );
 
-          const voice = new Voice({ num_beats: measureCapacity(score, m), beat_value: 4 });
+          // VexFlow 5's VoiceTime keys are numBeats/beatValue (camelCase) —
+          // the snake_case spelling this used to pass was dropped silently by
+          // the Object.assign in Voice's constructor, leaving every voice at
+          // the default 4/4 no matter what the score's time signature or
+          // pickup length actually was.
+          //
+          // measureCapacity is in quarter notes and can be fractional (3/8 =
+          // 1.5, a half-beat pickup = 0.5), so it's expressed in 32nd notes
+          // here to keep numBeats a whole number: 4 quarters -> 32/32.
+          const voice = new Voice({
+            numBeats: measureCapacity(score, m) * 8, beatValue: 32,
+          });
           voice.setStrict(false);
           voice.addTickables(vfNotes);
           // Formatter stretches whatever ticks are present across the full
@@ -942,6 +974,15 @@ export function renderScore(container, score, layout = LAYOUT) {
               return;
             }
 
+            // Every pitch this note actually carries. A tie may only ever
+            // connect to the *immediately following* note, so once this note
+            // has had its chance to receive them, any pitch still pending
+            // that isn't one of these was left dangling by an edit (its
+            // target got deleted, re-pitched, or had a note inserted in
+            // front of it) and is dropped below rather than being carried
+            // forward to hunt for a same-pitch note further down the piece.
+            const pidsHere = new Set(n.keys.map((tone) => pitchId(tone.key)));
+
             n.keys.forEach((tone, ki) => {
               const pid = pitchId(tone.key);
               const incomingTie = pendingTie[part].get(pid);
@@ -963,6 +1004,13 @@ export function renderScore(container, score, layout = LAYOUT) {
               if (tone.tieToNext) {
                 pendingTie[part].set(pid, { vfNote: b.vfNote, keyIndex: ki, line, ctx });
               }
+            });
+
+            // Drop the dangling ones (see pidsHere). Entries this very note
+            // just added are all in pidsHere by construction, so they survive
+            // to be matched against the *next* note.
+            pendingTie[part].forEach((_, pid) => {
+              if (!pidsHere.has(pid)) pendingTie[part].delete(pid);
             });
           });
 
@@ -1090,49 +1138,55 @@ export function renderScore(container, score, layout = LAYOUT) {
   });
 
   // Two tones of the same chord tied to the next chord produce two separate
-  // 'tie' deferredMarks entries with the same (a, b) note pair — issuing one
-  // StaveTie per tone (each with its own single-element firstIndices/
-  // lastIndices) only ever rendered one visible curve. VexFlow's supported
-  // way to tie multiple tones between the same two notes is a *single*
-  // StaveTie whose firstIndices/lastIndices each carry every tied tone, so
+  // 'tie' deferredMarks entries with the same (a, b) note pair. VexFlow's
+  // supported way to tie multiple tones between the same two notes is a
+  // *single* StaveTie whose index arrays each carry every tied tone, so
   // group same-pair ties together before drawing.
+  //
+  // The option names are firstIndexes/lastIndexes (see vexflow's TieNotes) —
+  // NOT firstIndices/lastIndices. StaveTie.setNotes() silently substitutes
+  // [0] for anything it doesn't recognize, so a misspelling here doesn't
+  // throw: it just draws exactly one tie, always on the chord's lowest
+  // notehead, no matter how many tones were actually tied.
   const tieGroups = [];
   deferredMarks.forEach((mark) => {
     if (mark.type !== 'tie') return;
     let group = tieGroups.find((g) => g.a === mark.a && g.b === mark.b && g.ctx === mark.ctx);
     if (!group) {
       group = {
-        a: mark.a, b: mark.b, ctx: mark.ctx, firstIndices: [], lastIndices: [],
+        a: mark.a, b: mark.b, ctx: mark.ctx, firstIndexes: [], lastIndexes: [],
       };
       tieGroups.push(group);
     }
-    group.firstIndices.push(mark.aIndex ?? mark.bIndex ?? 0);
-    group.lastIndices.push(mark.bIndex ?? mark.aIndex ?? 0);
+    group.firstIndexes.push(mark.aIndex ?? mark.bIndex ?? 0);
+    group.lastIndexes.push(mark.bIndex ?? mark.aIndex ?? 0);
   });
   tieGroups.forEach((g) => {
+    // A tie split across a system break has only one of its two notes; VexFlow's
+    // own synchronizeIndexes() then copies whichever index array belongs to the
+    // note that does exist onto the other, so both arrays are passed as-is here.
     new StaveTie({
-      firstNote: g.a, lastNote: g.b, firstIndices: g.firstIndices, lastIndices: g.lastIndices,
+      firstNote: g.a, lastNote: g.b, firstIndexes: g.firstIndexes, lastIndexes: g.lastIndexes,
     }).setContext(g.ctx).draw();
   });
 
-  // Same idea for スラー: two tones of a chord each slurred to the next
-  // chord produce two 'slur' marks with the same (a, b) note pair, but
-  // VexFlow's Curve has no per-tone index at all — its position comes purely
-  // from the *note's* stem extents, so two Curves on the same pair would
-  // compute identical coordinates and draw exactly on top of each other
-  // (indistinguishable from a single curve). Give each one after the first a
-  // larger yShift so they visibly fan out instead of overlapping.
-  const slurGroupCounts = [];
+  // スラー is deliberately NOT per-tone the way タイ is. A tie belongs to one
+  // pitch (each tone of a chord can tie or not, independently), but a slur is
+  // a phrase marking over the passage as a whole — printed scores draw one
+  // curve above a slurred chord progression, not one per chord tone. VexFlow's
+  // Curve agrees: it has no per-tone index at all, positioning itself purely
+  // from the notes' stem extents, so several Curves on the same (a, b) pair
+  // would land on identical coordinates anyway. Draw one curve per distinct
+  // note pair and skip the duplicates.
+  const drawnSlurPairs = [];
   deferredMarks.forEach((mark) => {
     if (mark.type === 'slur') {
-      let group = slurGroupCounts.find((g) => g.a === mark.a && g.b === mark.b && g.ctx === mark.ctx);
-      if (!group) {
-        group = { a: mark.a, b: mark.b, ctx: mark.ctx, count: 0 };
-        slurGroupCounts.push(group);
-      }
-      const yShift = 10 + group.count * 8;
-      group.count += 1;
-      new Curve(mark.a || undefined, mark.b || undefined, { yShift }).setContext(mark.ctx).draw();
+      const already = drawnSlurPairs.some(
+        (g) => g.a === mark.a && g.b === mark.b && g.ctx === mark.ctx,
+      );
+      if (already) return;
+      drawnSlurPairs.push({ a: mark.a, b: mark.b, ctx: mark.ctx });
+      new Curve(mark.a || undefined, mark.b || undefined, { yShift: 10 }).setContext(mark.ctx).draw();
     } else if (mark.type === 'hairpin') {
       const type = mark.kind === 'cresc' ? StaveHairpin.type.CRESC : StaveHairpin.type.DECRESC;
       new StaveHairpin({ firstNote: mark.a, lastNote: mark.b }, type).setContext(mark.ctx).draw();
@@ -1148,13 +1202,31 @@ export function renderScore(container, score, layout = LAYOUT) {
   });
 
   return {
-    hitMap, annotationHitMap, markHitMap, timeSigHitMap, pages, totalPages,
+    hitMap, annotationHitMap, markHitMap, timeSigHitMap, pages, totalPages, staveGap,
   };
 }
 
-export function findHitRegion(hitMap, pageIndex, part, x, y) {
+// How far above and below a stave's top line a click still counts as belonging
+// to that stave.
+//
+// These used to be fixed numbers tuned for the default 100px stave gap. But
+// staveGap widens to clear tall ledger lines (see computeRequiredStaveGap), and
+// the bands didn't grow with it — which opened a dead strip between staves
+// where clicks matched nothing at all. Scaling with the gap keeps the staves'
+// bands touching whatever the spacing is. They deliberately overlap a little;
+// resolveClickTarget in app.js settles the ambiguity by preferring whichever
+// stave actually has a note under the pointer.
+export function hitBandAbove(staveGap) {
+  return Math.max(45, staveGap * 0.45);
+}
+
+export function hitBandBelow(staveGap) {
+  return Math.max(85, staveGap * 0.85);
+}
+
+export function findHitRegion(hitMap, pageIndex, part, x, y, staveGap = LAYOUT.staveGap) {
   return hitMap.find(
     (r) => r.page === pageIndex && r.part === part && x >= r.x0 && x <= r.x1
-      && y >= r.topY - 40 && y <= r.topY + 80,
+      && y >= r.topY - hitBandAbove(staveGap) && y <= r.topY + hitBandBelow(staveGap),
   );
 }

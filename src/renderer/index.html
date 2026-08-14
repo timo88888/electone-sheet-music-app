@@ -145,6 +145,20 @@
       </div>
     </div>
     <div class="ribbon-group">
+      <span class="group-label">n番括弧(対象小節1つに適用)</span>
+      <div class="group-row">
+        <select id="volta-number-select">
+          <option value="1">1番</option>
+          <option value="2">2番</option>
+          <option value="3">3番</option>
+          <option value="4">4番</option>
+          <option value="5">5番</option>
+        </select>
+        <button id="btn-volta-apply">適用</button>
+        <button id="btn-volta-clear">解除</button>
+      </div>
+    </div>
+    <div class="ribbon-group">
       <span class="group-label">歌詞(対象小節が属する段落・五線譜に表示)</span>
       <div class="group-row">
         <select id="lyric-part-select">
@@ -233,20 +247,6 @@
         <span id="range-selection-label" class="range-label">未選択</span>
         <button id="btn-range-copy">コピー</button>
         <button id="btn-range-delete">まとめて削除</button>
-      </div>
-    </div>
-    <div class="ribbon-group">
-      <span class="group-label">n番括弧(範囲選択した小節に適用)</span>
-      <div class="group-row">
-        <select id="volta-number-select">
-          <option value="1">1番</option>
-          <option value="2">2番</option>
-          <option value="3">3番</option>
-          <option value="4">4番</option>
-          <option value="5">5番</option>
-        </select>
-        <button id="btn-volta-apply">適用</button>
-        <button id="btn-volta-clear">解除</button>
       </div>
     </div>
     <div class="ribbon-group">
