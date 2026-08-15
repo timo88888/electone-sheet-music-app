@@ -1,6 +1,6 @@
 {
   "name": "electone-sheet-music-app",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "エレクトーン楽譜生成アプリ",
   "main": "src/main/main.js",
   "scripts": {

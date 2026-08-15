@@ -1,7 +1,7 @@
 import {
   Renderer, Stave, StaveNote, StaveConnector, Voice, Formatter, Dot, Beam,
   BarlineType, StaveTie, Curve, StaveHairpin, Annotation, AnnotationVerticalJustify, Accidental,
-  Articulation, Tuplet, Ornament, Stroke,
+  Articulation, Tuplet, Ornament, Stroke, TextBracket,
 } from '../../node_modules/vexflow/build/esm/entry/vexflow.js';
 import {
   PARTS, measureCapacity, getClef, REST_ANCHOR_KEY, noteBeats, keySignatureAccidentalCount,
@@ -322,6 +322,13 @@ function buildStaveNotes(measure, part, clef) {
       } else {
         n.keys.forEach((_, idx) => vfNote.setKeyStyle(idx, { fillStyle: '#9c27b0', strokeStyle: '#9c27b0' }));
       }
+    }
+    // Manual stem flip. VexFlow picks a direction from the note's position on
+    // the staff, which is right most of the time but not always — in a passage
+    // that reads as two voices, or where a beam would collide with something,
+    // the engraver overrides it. null means "leave it to VexFlow".
+    if (!n.isRest && (n.stemDirection === 1 || n.stemDirection === -1)) {
+      vfNote.setStemDirection(n.stemDirection);
     }
     if (n.articulation) {
       addArticulationModifier(vfNote, n.articulation);
@@ -722,6 +729,18 @@ export function renderScore(container, score, layout = LAYOUT) {
       });
     });
   });
+  // 8va / 8vb — an octave bracket over a passage. Unlike a tie or slur it isn't
+  // per-tone visually (one bracket covers the whole run), so only the first
+  // tone carrying the link is used.
+  const ottavaLinks = [];
+  noteById.forEach((n) => {
+    if (n.isRest) return;
+    const tone = n.keys.find((t) => t.ottavaTo);
+    if (!tone) return;
+    const targetNote = noteById.get(tone.ottavaTo.noteId);
+    if (!targetNote) return; // dangling
+    ottavaLinks.push({ fromId: n.id, toId: tone.ottavaTo.noteId, kind: tone.ottavaTo.kind });
+  });
 
   for (let page = 0; page < totalPages; page++) {
     const pageTitleExtra = page === 0 ? titleHeaderHeight : 0;
@@ -924,7 +943,21 @@ export function renderScore(container, score, layout = LAYOUT) {
           const fullWidth = Math.max(widths[colIndex] - 20, 20);
           const targetWidth = Math.max(30, fullWidth * fillRatio);
           new Formatter().joinVoices([voice]).format([voice], targetWidth);
-          const beams = Beam.generateBeams(vfNotes);
+          // Beams are grouped automatically, but a note flagged beamBreak
+          // starts a fresh group — the manual override an engraver reaches for
+          // when the automatic grouping obscures the beat structure. Each run
+          // between breaks is beamed on its own.
+          const beams = [];
+          let beamSegment = [];
+          const flushBeamSegment = () => {
+            if (beamSegment.length > 0) beams.push(...Beam.generateBeams(beamSegment));
+            beamSegment = [];
+          };
+          built.forEach((b) => {
+            if (b.noteRef && b.noteRef.beamBreak) flushBeamSegment();
+            beamSegment.push(b.vfNote);
+          });
+          flushBeamSegment();
           voice.draw(ctx, stave);
           beams.forEach((b) => b.setContext(ctx).draw());
           tuplets.forEach((t) => t.setContext(ctx).draw());
@@ -1135,6 +1168,26 @@ export function renderScore(container, score, layout = LAYOUT) {
         type: 'glissando-partial', note: b.vfNote, keyIndex: to.keyIndex, outgoing: false, ctx: b.ctx,
       });
     }
+  });
+
+  // 8va/8vb brackets. VexFlow's TextBracket wants both notes, so a bracket that
+  // crosses a system break is drawn from its start note to the last note on
+  // that same line, then resumed on the next — the same convention printed
+  // scores use. A bracket whose ends are on different lines with nothing to
+  // anchor to is simply skipped rather than drawn to nowhere.
+  ottavaLinks.forEach(({ fromId, toId, kind }) => {
+    const a = builtByNoteId.get(fromId);
+    const b = builtByNoteId.get(toId);
+    if (!a || !b || a.line !== b.line) return;
+    const position = kind === '8vb' ? TextBracket.Position.BOTTOM : TextBracket.Position.TOP;
+    const bracket = new TextBracket({
+      start: a.vfNote,
+      stop: b.vfNote,
+      text: '8',
+      superscript: kind === '8vb' ? 'vb' : 'va',
+      position,
+    });
+    bracket.setContext(a.ctx).draw();
   });
 
   // Two tones of the same chord tied to the next chord produce two separate

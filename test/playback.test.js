@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  buildPlaybackEvents, pitchToMidi, eventMidiNotes, DEFAULT_VELOCITY,
+  buildPlaybackEvents, pitchToMidi, eventMidiNotes, buildOttavaShifts, DEFAULT_VELOCITY,
 } from '../src/renderer/playback.js';
 import { buildMidiFile } from '../src/renderer/midiExport.js';
 import { gmProgramFor, GM_PROGRAM_NAMES } from '../src/renderer/gmPrograms.js';
@@ -207,6 +207,66 @@ test('the glissando run reaches the MIDI export too', () => {
   // E4 (64) is only reachable as an intermediate step of the slide.
   const hasE4 = bytes.some((_, i) => bytes[i] === 0x90 && bytes[i + 1] === 64);
   assert.ok(hasE4, 'the intermediate white keys should be written to the MIDI file');
+});
+
+// --- 8va / 8vb ----------------------------------------------------------
+// An octave bracket exists so a high or low passage can be written on the
+// staff instead of on ledger lines — so the notes under it have to sound an
+// octave away from where they're written.
+
+test('8va raises everything the bracket covers', () => {
+  const end = note([tone('e/4')]);
+  const mid = note([tone('d/4')]);
+  const start = note([tone('c/4', { ottavaTo: { noteId: end.id, pitchKey: 'e/4', kind: '8va' } })]);
+  const after = note([tone('f/4')]);
+  const score = scoreOf([measure({ upper: [start, mid, end, after] })]);
+  const notes = buildPlaybackEvents(score, 60)
+    .sort((a, b) => a.time - b.time)
+    .map((e) => eventMidiNotes(e)[0]);
+  // C4 D4 E4 up an octave, then F4 back at its written pitch.
+  assert.deepEqual(notes, [72, 74, 76, 65]);
+});
+
+test('8vb lowers everything the bracket covers', () => {
+  const end = note([tone('d/4')]);
+  const start = note([tone('c/4', { ottavaTo: { noteId: end.id, pitchKey: 'd/4', kind: '8vb' } })]);
+  const score = scoreOf([measure({ upper: [start, end] })]);
+  const notes = buildPlaybackEvents(score, 60)
+    .sort((a, b) => a.time - b.time)
+    .map((e) => eventMidiNotes(e)[0]);
+  assert.deepEqual(notes, [48, 50]);
+});
+
+test('an octave bracket does not affect other parts', () => {
+  const end = note([tone('d/4')]);
+  const start = note([tone('c/4', { ottavaTo: { noteId: end.id, pitchKey: 'd/4', kind: '8va' } })]);
+  const other = note([tone('c/4')]);
+  const score = scoreOf([measure({ upper: [start, end], lower: [other] })]);
+  const lower = buildPlaybackEvents(score, 60).filter((e) => e.part === 'lower');
+  assert.equal(eventMidiNotes(lower[0])[0], 60);
+});
+
+test('a backwards or dangling octave bracket is ignored', () => {
+  const first = note([tone('c/4')]);
+  const second = note([tone('d/4', { ottavaTo: { noteId: first.id, pitchKey: 'c/4', kind: '8va' } })]);
+  const score = scoreOf([measure({ upper: [first, second] })]);
+  const notes = buildPlaybackEvents(score, 60)
+    .sort((a, b) => a.time - b.time)
+    .map((e) => eventMidiNotes(e)[0]);
+  assert.deepEqual(notes, [60, 62]);
+});
+
+test('buildOttavaShifts marks exactly the notes in the span', () => {
+  const end = note([tone('e/4')]);
+  const mid = note([tone('d/4')]);
+  const start = note([tone('c/4', { ottavaTo: { noteId: end.id, pitchKey: 'e/4', kind: '8va' } })]);
+  const after = note([tone('f/4')]);
+  const score = scoreOf([measure({ upper: [start, mid, end, after] })]);
+  const shifts = buildOttavaShifts(score, ['upper', 'lower', 'pedal']);
+  assert.equal(shifts.get(start.id), 12);
+  assert.equal(shifts.get(mid.id), 12);
+  assert.equal(shifts.get(end.id), 12);
+  assert.equal(shifts.get(after.id), undefined);
 });
 
 // --- GM program mapping ------------------------------------------------

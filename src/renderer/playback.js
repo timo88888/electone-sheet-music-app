@@ -89,6 +89,38 @@ function linkTargetMidi(noteById, link, keySignature) {
   return pitchToMidi(buildKey(letter, implied === 'n' ? '' : implied, octave));
 }
 
+// --- 8va / 8vb ---
+//
+// An octave bracket means "these notes are written here but sound an octave
+// away" — that's the whole reason to use one instead of piling up ledger
+// lines. So playback has to shift everything the bracket covers.
+//
+// Returns Map<noteId, semitones> for every note inside a bracket. The span is
+// the run of notes from the one carrying the link through the one it points
+// at, in that part's own order.
+export function buildOttavaShifts(score, parts) {
+  const shifts = new Map();
+  parts.forEach((part) => {
+    const flat = [];
+    score.measures.forEach((measure) => {
+      (measure[part] || []).forEach((n) => flat.push(n));
+    });
+    flat.forEach((n, i) => {
+      if (n.isRest) return;
+      const tone = (n.keys || []).find((t) => t.ottavaTo);
+      if (!tone) return;
+      const endIndex = flat.findIndex((m) => m.id === tone.ottavaTo.noteId);
+      // A bracket pointing backwards (or at a note in another part, which the
+      // UI prevents but a hand-edited file could still contain) is ignored
+      // rather than silently shifting the wrong run.
+      if (endIndex < i) return;
+      const semitones = tone.ottavaTo.kind === '8vb' ? -12 : 12;
+      for (let j = i; j <= endIndex; j += 1) shifts.set(flat[j].id, semitones);
+    });
+  });
+  return shifts;
+}
+
 export function pitchToMidi(key) {
   const { letter, accidental, octave } = parseKey(key);
   return (octave + 1) * 12 + LETTER_SEMITONE[letter] + ACCIDENTAL_OFFSET[accidental];
@@ -136,6 +168,8 @@ export function buildPlaybackEvents(score, bpm = 100) {
   const order = buildPlayOrder(score);
   const events = [];
 
+  const ottavaShifts = buildOttavaShifts(score, PARTS);
+
   // Needed to resolve a グリッサンド's destination, which can be any note
   // anywhere in the score rather than the next one along.
   const noteById = new Map();
@@ -174,6 +208,7 @@ export function buildPlaybackEvents(score, bpm = 100) {
             standingVelocity = DYNAMIC_VELOCITY[n.dynamic];
           }
           const velocity = velocityFor(n.dynamic, n.articulation, standingVelocity);
+          const ottavaShift = ottavaShifts.get(n.id) || 0;
           // Staccato shortens the sound only — beatCursor below still advances
           // by the full written value, so nothing after it moves.
           const durationScale = ARTICULATION_DURATION_SCALE[n.articulation] || 1;
@@ -220,12 +255,13 @@ export function buildPlaybackEvents(score, bpm = 100) {
                   part,
                   ids: [n.id],
                   velocity,
+                  ...(ottavaShift ? { midi: pitchToMidi(resolved) + ottavaShift } : {}),
                 });
                 glissTargets.forEach((midi, step) => {
                   events.push({
                     time: noteStart + slotDur * (step + 1),
                     duration: slotDur,
-                    midi,
+                    midi: midi + ottavaShift,
                     keys: [],
                     part,
                     // Attributed to the written note so the on-screen playback
@@ -243,6 +279,9 @@ export function buildPlaybackEvents(score, bpm = 100) {
                   ids: [n.id],
                   velocity,
                 };
+                // Inside an octave bracket the written pitch isn't the sounding
+                // one, so the event carries an explicit MIDI number instead.
+                if (ottavaShift) ev.midi = pitchToMidi(resolved) + ottavaShift;
                 if (tone.tieToNext) nextPending.set(pid, ev); else events.push(ev);
               }
             }

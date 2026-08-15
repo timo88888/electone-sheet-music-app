@@ -18,7 +18,10 @@
 
 import { parseKey } from './pitchMap.js';
 
-export const LINK_FIELDS = ['slurTo', 'glissandoTo'];
+// Tone-level links to another note: { noteId, pitchKey } (plus whatever extra
+// the mark needs, e.g. an ottava's direction). Listing them here is what gets
+// each one pruned, re-targeted and re-mapped on paste for free.
+export const LINK_FIELDS = ['slurTo', 'glissandoTo', 'ottavaTo'];
 
 // Same-staff-position identity (letter+octave, ignoring accidental) used as a
 // slur/glissando's stored target. Must match staffRenderer.js's pitchId()

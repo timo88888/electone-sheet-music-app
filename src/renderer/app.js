@@ -50,7 +50,33 @@ const TEMPO_NOTE_ICON_SVG = {
 //   its isPlaceholder/pendingSlurEnd/partialChordNote bookkeeping) is gone;
 //   any leftover placeholder rests from that flow are just plain rests now.
 function migrateScore(loaded) {
-  (loaded.measures || []).forEach((measure) => {
+  // A score file is just JSON on disk: it can be hand-edited, truncated, or
+  // come from a version that didn't have a field yet. Anything the app reads
+  // unconditionally is defaulted here rather than at each call site, so a file
+  // missing (say) timeSig can't take the whole app down on the next render.
+  if (!loaded || typeof loaded !== 'object') throw new Error('楽譜ファイルの形式が正しくありません');
+  if (!Array.isArray(loaded.measures) || loaded.measures.length === 0) {
+    loaded.measures = [createEmptyMeasure()];
+  }
+  if (typeof loaded.title !== 'string') loaded.title = '無題の楽譜';
+  if (typeof loaded.composer !== 'string') loaded.composer = '';
+  if (typeof loaded.lyricist !== 'string') loaded.lyricist = '';
+  if (!isValidTimeSig(loaded.timeSig)) loaded.timeSig = '4/4';
+  if (!KEY_SIGNATURES.some((k) => k.value === loaded.keySignature)) loaded.keySignature = 'C';
+  loaded.pickupBeats = Number(loaded.pickupBeats) || 0;
+  loaded.clefs = { ...PART_CLEF, ...(loaded.clefs || {}) };
+  loaded.measures.forEach((measure) => {
+    PARTS.forEach((part) => {
+      if (!Array.isArray(measure[part])) measure[part] = [];
+      // A note with no pitches at all would crash every renderer path that
+      // reads keys[0]; drop those rather than carrying them forward.
+      measure[part] = measure[part].filter(
+        (n) => n && (n.isRest || (Array.isArray(n.keys) && n.keys.length > 0)),
+      );
+    });
+  });
+
+  loaded.measures.forEach((measure) => {
     if (measure.lineBreak === undefined) measure.lineBreak = false;
     if (!measure.marks) measure.marks = [];
     if (measure.lyric === undefined) measure.lyric = '';
@@ -116,6 +142,8 @@ function migrateScore(loaded) {
     });
     PARTS.forEach((part) => {
       (measure[part] || []).forEach((n) => {
+        if (n.stemDirection === undefined) n.stemDirection = null;
+        if (n.beamBreak === undefined) n.beamBreak = false;
         if (n.keys && n.keys.length && typeof n.keys[0] === 'string') {
           n.keys = n.keys.map((k) => ({
             key: k, tieToNext: !!n.tieToNext, slurTo: null, glissandoTo: null,
@@ -126,6 +154,7 @@ function migrateScore(loaded) {
           (n.keys || []).forEach((tone) => {
             if (tone.slurTo === undefined) tone.slurTo = null;
             if (tone.glissandoTo === undefined) tone.glissandoTo = null;
+            if (tone.ottavaTo === undefined) tone.ottavaTo = null;
             delete tone.slur;
             delete tone.pendingSlurEnd;
           });
@@ -158,6 +187,8 @@ let historyIndex = 0;
 // position differs, there are unsaved edits (see the close-confirmation
 // handler below). Undo/redo back to this exact index counts as "not dirty".
 let savedHistoryIndex = 0;
+// How many undo steps to keep. Each is a full structuredClone of the score.
+const HISTORY_LIMIT = 200;
 
 let selectedDuration = 'q';
 let selectedDotted = false;
@@ -181,6 +212,8 @@ let pendingClick = null; // { pageIndex, region, startClientX, startClientY, loc
 let selectedLink = null; // null | 'tuplet3' | 'tuplet5' | 'tuplet7' — see insertNote
 let pendingSlurStart = null; // { measureIndex, part, noteId, keyIndex } | null — see toggleSlurFromSelectedTone
 let pendingGlissandoStart = null; // { measureIndex, part, noteId, keyIndex } | null — see toggleGlissandoFromSelectedTone
+// 8va/8vb waiting for the note that ends its span — { ...selected, kind } | null.
+let pendingOttavaStart = null;
 let multiSelected = []; // { measureIndex, part, noteId, keyIndex }[] — Ctrl/Cmd+click, see showMultiSelectContextMenu
 let selectedMeasureIndex = null;
 // Whole-note (chord-as-one-unit) range selection — built by dragging
@@ -367,25 +400,55 @@ function cloneNotesWithFreshIds(notes) {
 
 function pushHistory() {
   pruneDanglingLinks(score, PARTS);
+  // Deferred so it runs after historyIndex has moved (see the end of this
+  // function) — the title's unsaved marker reads off that.
+  queueMicrotask(updateWindowTitle);
   history = history.slice(0, historyIndex + 1);
   history.push(structuredClone(score));
+  // Each entry is a full deep copy of the score, so an unbounded history grows
+  // steadily through a long editing session. Drop the oldest steps past the
+  // limit, shifting the "last saved" marker with them (it goes to -1 once the
+  // saved state itself has been forgotten, which correctly reads as "dirty").
+  if (history.length > HISTORY_LIMIT) {
+    const dropped = history.length - HISTORY_LIMIT;
+    history.splice(0, dropped);
+    savedHistoryIndex -= dropped;
+  }
   historyIndex = history.length - 1;
+}
+
+// Restores a history entry, keeping the current selection pointed at the same
+// note when that note still exists in the restored score. Undo used to clear
+// the selection unconditionally, so stepping back through a few edits meant
+// re-finding and re-clicking the note you were working on.
+function restoreHistoryEntry() {
+  score = structuredClone(history[historyIndex]);
+  multiSelected = [];
+  noteRangeSelection = null;
+  if (selected) {
+    const measure = score.measures[selected.measureIndex];
+    const note = measure && (measure[selected.part] || []).find((n) => n.id === selected.noteId);
+    if (note && !note.isRest && selected.keyIndex < note.keys.length) {
+      // still valid — leave `selected` as it is
+    } else {
+      selected = null;
+    }
+  }
+  render();
+  syncNoteControlsFromSelection();
+  updateWindowTitle();
 }
 
 function undo() {
   if (historyIndex <= 0) return;
   historyIndex--;
-  score = structuredClone(history[historyIndex]);
-  selected = null;
-  render();
+  restoreHistoryEntry();
 }
 
 function redo() {
   if (historyIndex >= history.length - 1) return;
   historyIndex++;
-  score = structuredClone(history[historyIndex]);
-  selected = null;
-  render();
+  restoreHistoryEntry();
 }
 
 function markSelection() {
@@ -506,6 +569,7 @@ function getSelectedTone() {
 function clearSelection() {
   pendingSlurStart = null;
   pendingGlissandoStart = null;
+  pendingOttavaStart = null;
   const hadMultiSelection = multiSelected.length > 0;
   multiSelected = [];
   if (!selected && !hadMultiSelection) return;
@@ -548,14 +612,32 @@ function addPitchToNote(note, region, y) {
   const baseKey = pitchForIndex(region.clef, index);
   const { letter, octave } = parseKey(baseKey);
   const key = buildKey(letter, selectedAccidental, octave);
-  const alreadyThere = note.keys.some((tone) => {
+  // A chord can't hold two notes on the same line/space. If one is already
+  // there, clicking it with an accidental armed sets that accidental instead
+  // of being refused — before, arming ♯ and clicking an existing C just said
+  // "すでに同じ高さの音があります" with no way to make it a C♯ in one step.
+  const existing = note.keys.find((tone) => {
     const p = parseKey(tone.key);
     return p.letter.toLowerCase() === letter.toLowerCase() && p.octave === octave;
   });
-  if (alreadyThere) { setStatus('すでに同じ高さの音があります'); return; }
+  if (existing) {
+    if (existing.key === key) { setStatus('すでに同じ高さの音があります'); return; }
+    setTonePitch(note, existing, key);
+    selected = {
+      measureIndex: region.measureIndex,
+      part: region.part,
+      noteId: note.id,
+      keyIndex: note.keys.indexOf(existing),
+    };
+    pushHistory();
+    render();
+    syncNoteControlsFromSelection();
+    setStatus('臨時記号を変更しました');
+    return;
+  }
 
   note.keys.push({
-    key, tieToNext: false, slurTo: null, glissandoTo: null,
+    key, tieToNext: false, slurTo: null, glissandoTo: null, ottavaTo: null,
   });
   sortNoteKeys(note);
   const keyIndex = note.keys.findIndex((t) => t.key === key);
@@ -601,6 +683,12 @@ function syncNoteControlsFromSelection() {
   });
   document.querySelectorAll('[data-tone-action="glissando"]').forEach((b) => {
     b.classList.toggle('active', !!(tone && tone.glissandoTo));
+  });
+  document.querySelectorAll('[data-tone-action="ottava-8va"]').forEach((b) => {
+    b.classList.toggle('active', !!(tone && tone.ottavaTo && tone.ottavaTo.kind === '8va'));
+  });
+  document.querySelectorAll('[data-tone-action="ottava-8vb"]').forEach((b) => {
+    b.classList.toggle('active', !!(tone && tone.ottavaTo && tone.ottavaTo.kind === '8vb'));
   });
 }
 
@@ -1531,6 +1619,10 @@ document.addEventListener('keydown', (e) => {
       pendingGlissandoStart = null;
       setStatus('グリッサンドを取り消しました');
     }
+    if (pendingOttavaStart) {
+      pendingOttavaStart = null;
+      setStatus('オクターブ記号を取り消しました');
+    }
   }
 });
 
@@ -1669,6 +1761,40 @@ function onPageMouseDown(e, pageDiv, pageIndex) {
       setStatus('グリッサンドをつけました');
     } else {
       setStatus('グリッサンドを取り消しました');
+    }
+    clearRangeSelection();
+    clearMeasureSelection();
+    selected = {
+      measureIndex: region.measureIndex, part: region.part, noteId: existing.noteRef.id, keyIndex: existing.keyIndex,
+    };
+    render();
+    syncNoteControlsFromSelection();
+    return;
+  }
+
+  if (pendingOttavaStart && existing && !e.shiftKey) {
+    const startMeasure = score.measures[pendingOttavaStart.measureIndex];
+    const startNote = startMeasure && startMeasure[pendingOttavaStart.part]
+      .find((n) => n.id === pendingOttavaStart.noteId);
+    const startTone = startNote && startNote.keys[pendingOttavaStart.keyIndex];
+    const isSameTone = pendingOttavaStart.noteId === existing.noteRef.id
+      && pendingOttavaStart.keyIndex === existing.keyIndex;
+    // An octave bracket spans a passage on one staff, so both ends have to be
+    // in the same part.
+    const samePart = pendingOttavaStart.part === region.part;
+    const { kind } = pendingOttavaStart;
+    const validTarget = startTone && !isSameTone && samePart && !existing.noteRef.isRest;
+    pendingOttavaStart = null;
+    if (validTarget) {
+      startTone.ottavaTo = {
+        noteId: existing.noteRef.id,
+        pitchKey: pitchKeyOf(existing.noteRef.keys[existing.keyIndex].key),
+        kind,
+      };
+      pushHistory();
+      setStatus(`${kind}をつけました`);
+    } else {
+      setStatus(samePart ? 'オクターブ記号を取り消しました' : '同じ段の音符を選んでください');
     }
     clearRangeSelection();
     clearMeasureSelection();
@@ -2008,7 +2134,7 @@ function makeRest(duration, dotted) {
     // rest at its clef's own anchor position (see buildStaveNotes), and this
     // value is what the note would take if the rest is later dragged into one.
     keys: [{
-      key: 'b/4', tieToNext: false, slurTo: null, glissandoTo: null,
+      key: 'b/4', tieToNext: false, slurTo: null, glissandoTo: null, ottavaTo: null,
     }],
     duration,
     dotted: !!dotted,
@@ -2094,7 +2220,7 @@ function insertNote(region, x, y) {
   const makeNote = (overrides = {}) => ({
     id: makeNoteId(),
     keys: [{
-      key, tieToNext: false, slurTo: null, glissandoTo: null,
+      key, tieToNext: false, slurTo: null, glissandoTo: null, ottavaTo: null,
     }],
     duration: selectedDuration,
     dotted: selectedDotted,
@@ -2105,6 +2231,8 @@ function insertNote(region, x, y) {
     articulation: '',
     tupletId: null,
     tupletCount: null,
+    stemDirection: null,
+    beamBreak: false,
     ...noteAnnotationDefaults(),
     ...overrides,
   });
@@ -2342,6 +2470,29 @@ document.addEventListener('keydown', (e) => {
   const tag = e.target.tagName;
   const inFormControl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
   const hasSelection = selected || (noteRangeSelection && noteRangeSelection.length >= 2) || rangeSelection;
+  const mod = e.ctrlKey || e.metaKey;
+
+  // File shortcuts work everywhere, including while a text field has focus —
+  // Ctrl+S in the middle of typing a title should still save.
+  if (mod && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    if (e.shiftKey) saveScoreAs(); else saveScore();
+    return;
+  }
+  if (mod && !e.shiftKey && e.key.toLowerCase() === 'o') {
+    e.preventDefault();
+    openScoreFile();
+    return;
+  }
+  if (mod && e.key.toLowerCase() === 'p') {
+    e.preventDefault();
+    clearAllSelectionsForPrint();
+    enterPrintLayout();
+    window.print();
+    leavePrintLayout();
+    return;
+  }
+
   if (!inFormControl && (e.key === 'Delete' || e.key === 'Backspace') && hasSelection) {
     e.preventDefault();
     deleteActiveSelection();
@@ -2556,7 +2707,7 @@ function applyTieToSelectedTone() {
       // flag on load, so a saved-and-reopened score behaved differently from
       // the same score before saving.
       next.keys.push({
-        key: tone.key, tieToNext: false, slurTo: null, glissandoTo: null,
+        key: tone.key, tieToNext: false, slurTo: null, glissandoTo: null, ottavaTo: null,
       });
       sortNoteKeys(next);
     } else {
@@ -2572,7 +2723,7 @@ function applyTieToSelectedTone() {
       const newNote = {
         id: makeNoteId(),
         keys: [{
-          key: tone.key, tieToNext: false, slurTo: null, glissandoTo: null,
+          key: tone.key, tieToNext: false, slurTo: null, glissandoTo: null, ottavaTo: null,
         }],
         duration: selectedDuration,
         dotted: selectedDotted,
@@ -2639,11 +2790,40 @@ function toggleGlissandoFromSelectedTone() {
   setStatus('グリッサンドの終わりにしたい音符をクリックしてください(Escで取消)');
 }
 
+// 8va / 8vb — an octave bracket over a passage. Same two-click arm/confirm
+// shape as スラー and グリッサンド: pick the note it starts on, press the
+// button, then click the note it should reach. Notes inside the bracket are
+// written where they read and sound an octave away (see buildOttavaShifts in
+// playback.js), which is the whole point of the marking: it keeps a high or
+// low passage on the staff instead of stacking up ledger lines.
+function toggleOttavaFromSelectedTone(kind) {
+  const note = getSelectedNote();
+  if (!note || note.isRest) { setStatus('音符を選択してください'); return; }
+  const tone = getSelectedTone();
+  if (!tone) return;
+
+  if (tone.ottavaTo) {
+    tone.ottavaTo = null;
+    pendingOttavaStart = null;
+    pushHistory();
+    render();
+    syncNoteControlsFromSelection();
+    setStatus('オクターブ記号を解除しました');
+    return;
+  }
+
+  pendingOttavaStart = { ...selected, kind };
+  setStatus(`${kind}の終わりにしたい音符をクリックしてください(Escで取消)`);
+}
+
 document.querySelectorAll('[data-tone-action]').forEach((btn) => {
   btn.addEventListener('click', () => {
-    if (btn.dataset.toneAction === 'tie') applyTieToSelectedTone();
-    else if (btn.dataset.toneAction === 'slur') toggleSlurFromSelectedTone();
-    else if (btn.dataset.toneAction === 'glissando') toggleGlissandoFromSelectedTone();
+    const action = btn.dataset.toneAction;
+    if (action === 'tie') applyTieToSelectedTone();
+    else if (action === 'slur') toggleSlurFromSelectedTone();
+    else if (action === 'glissando') toggleGlissandoFromSelectedTone();
+    else if (action === 'ottava-8va') toggleOttavaFromSelectedTone('8va');
+    else if (action === 'ottava-8vb') toggleOttavaFromSelectedTone('8vb');
   });
 });
 
@@ -3000,6 +3180,7 @@ function clearAllSelectionsForPrint() {
   selectedMeasureIndex = null;
   pendingSlurStart = null;
   pendingGlissandoStart = null;
+  pendingOttavaStart = null;
   deselectShapeAndField();
   updateRangeLabel();
   render();
@@ -3075,9 +3256,64 @@ function scoreForSave() {
   return copy;
 }
 
-function saveScoreFile() {
-  download(`${score.title || 'score'}.json`, [JSON.stringify(scoreForSave(), null, 2)], 'application/json');
-  savedHistoryIndex = historyIndex;
+// The file this score was last opened from or saved to, so 上書き保存 can write
+// straight back to it. null for a score that has never been on disk.
+let currentFilePath = null;
+
+function fileNameOf(filePath) {
+  return filePath ? filePath.split(/[\\/]/).pop() : null;
+}
+
+// Reflects the current file (and whether it has unsaved edits) in the window
+// title, the way any document-based app does.
+function updateWindowTitle() {
+  const name = fileNameOf(currentFilePath) || `${score.title || '無題の楽譜'}.json`;
+  document.title = `${hasUnsavedChanges() ? '● ' : ''}${name} — エレクトーン楽譜生成アプリ`;
+}
+
+function defaultSaveName() {
+  return fileNameOf(currentFilePath) || `${score.title || '楽譜'}.json`;
+}
+
+// 名前を付けて保存 — always asks for a location, and adopts whatever the user
+// picks as the score's file from then on.
+async function saveScoreAs() {
+  const contents = JSON.stringify(scoreForSave(), null, 2);
+  if (!window.electronAPI) {
+    // Browser fallback (no main process to open a native dialog).
+    download(defaultSaveName(), [contents], 'application/json');
+    savedHistoryIndex = historyIndex;
+    updateWindowTitle();
+    return true;
+  }
+  try {
+    const result = await window.electronAPI.saveScoreAs(defaultSaveName(), contents);
+    if (result.canceled) return false;
+    currentFilePath = result.filePath;
+    savedHistoryIndex = historyIndex;
+    updateWindowTitle();
+    setStatus(`保存しました: ${fileNameOf(currentFilePath)}`);
+    return true;
+  } catch (err) {
+    setStatus('保存に失敗しました');
+    return false;
+  }
+}
+
+// 上書き保存 — writes back to the file already in use, falling back to
+// 名前を付けて保存 the first time (or in the browser, which has no path).
+async function saveScore() {
+  if (!currentFilePath || !window.electronAPI) return saveScoreAs();
+  try {
+    await window.electronAPI.saveScoreTo(currentFilePath, JSON.stringify(scoreForSave(), null, 2));
+    savedHistoryIndex = historyIndex;
+    updateWindowTitle();
+    setStatus(`上書き保存しました: ${fileNameOf(currentFilePath)}`);
+    return true;
+  } catch (err) {
+    setStatus('保存に失敗しました');
+    return false;
+  }
 }
 
 // True when the score has edits that haven't been written to a file — the same
@@ -3094,36 +3330,55 @@ async function confirmDiscardUnsaved(what) {
   return showConfirmModal(`保存していない変更があります。破棄して${what}しますか?`);
 }
 
-document.getElementById('btn-save').addEventListener('click', saveScoreFile);
+document.getElementById('btn-save').addEventListener('click', () => { saveScore(); });
+document.getElementById('btn-save-as').addEventListener('click', () => { saveScoreAs(); });
+
+// Adopts a parsed score as the current document. Shared by both open paths
+// (the native dialog and the browser file input) so they can't drift.
+function adoptLoadedScore(loaded, filePath) {
+  score = migrateScore(loaded);
+  currentFilePath = filePath || null;
+  history = [structuredClone(score)];
+  historyIndex = 0;
+  savedHistoryIndex = 0;
+  selected = null;
+  multiSelected = [];
+  noteRangeSelection = null;
+  rangeSelection = null;
+  selectedMeasureIndex = null;
+  syncControlsFromScore();
+  updateRangeLabel();
+  render();
+  updateWindowTitle();
+  setStatus(filePath ? `読み込みました: ${fileNameOf(filePath)}` : '読み込みました');
+}
 
 const openInput = document.getElementById('open-input');
-document.getElementById('btn-open').addEventListener('click', () => openInput.click());
-openInput.addEventListener('change', async () => {
+
+async function openScoreFile() {
+  if (!(await confirmDiscardUnsaved('開く'))) return;
+  if (!window.electronAPI) { openInput.click(); return; }
+  try {
+    const result = await window.electronAPI.openScore();
+    if (result.canceled) return;
+    adoptLoadedScore(JSON.parse(result.contents), result.filePath);
+  } catch (err) {
+    setStatus('読み込みに失敗しました');
+  }
+}
+
+document.getElementById('btn-open').addEventListener('click', openScoreFile);
+
+// Browser fallback only — the packaged app goes through the native dialog
+// above, which is what lets it remember the path for 上書き保存.
+openInput.addEventListener('change', () => {
   const file = openInput.files[0];
-  // Cleared up front (not after reading) so picking the same file again still
-  // fires a change event, and so an early return can't leave it selected.
   openInput.value = '';
   if (!file) return;
-  if (!(await confirmDiscardUnsaved('開く'))) return;
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const loaded = JSON.parse(reader.result);
-      score = migrateScore(loaded);
-      if (!score.pickupBeats) score.pickupBeats = 0;
-      if (!score.clefs) score.clefs = { upper: 'treble', lower: 'bass', pedal: 'bass' };
-      if (score.composer === undefined) score.composer = '';
-      if (score.lyricist === undefined) score.lyricist = '';
-      if (!score.keySignature) score.keySignature = 'C';
-      history = [structuredClone(score)];
-      historyIndex = 0;
-      savedHistoryIndex = 0;
-      selected = null;
-      rangeSelection = null;
-      selectedMeasureIndex = null;
-      syncControlsFromScore();
-      render();
-      setStatus('読み込みました');
+      adoptLoadedScore(JSON.parse(reader.result), null);
     } catch (err) {
       setStatus('読み込みに失敗しました');
     }
@@ -3131,16 +3386,31 @@ openInput.addEventListener('change', async () => {
   reader.readAsText(file);
 });
 
+// MIDI/WAV go through the same native save dialog as the score itself, so the
+// user picks where the file lands instead of it appearing in the downloads
+// folder. Falls back to a browser download outside the packaged app.
+async function exportBinary(buffer, fileName, filters, mimeType) {
+  if (!window.electronAPI) {
+    download(fileName, [buffer], mimeType);
+    return;
+  }
+  try {
+    const result = await window.electronAPI.saveBinaryAs(fileName, filters, buffer);
+    setStatus(result.canceled ? '' : `書き出しました: ${fileNameOf(result.filePath)}`);
+  } catch (err) {
+    setStatus('書き出しに失敗しました');
+  }
+}
+
 document.getElementById('btn-export-midi').addEventListener('click', () => {
   const buffer = buildMidiFile(score, effectiveQuarterBpm(score));
-  download(`${score.title || 'score'}.mid`, [buffer], 'audio/midi');
+  exportBinary(buffer, `${score.title || 'score'}.mid`, [{ name: 'MIDI', extensions: ['mid'] }], 'audio/midi');
 });
 
 document.getElementById('btn-export-wav').addEventListener('click', async () => {
   setStatus('音声を書き出し中...');
   const buffer = await renderScoreToWavBuffer(score, effectiveQuarterBpm(score), score.instruments);
-  download(`${score.title || 'score'}.wav`, [buffer], 'audio/wav');
-  setStatus('書き出しました');
+  await exportBinary(buffer, `${score.title || 'score'}.wav`, [{ name: 'WAV', extensions: ['wav'] }], 'audio/wav');
 });
 
 const titleInput = document.getElementById('title-input');
@@ -3835,6 +4105,23 @@ function noteAttributeSubmenus() {
   if (!note) return [];
   const mark = getMarkForSelectedNote();
   return [
+    // 符尾(stem)の向きと連桁(beam)の切れ目 — VexFlow decides both automatically,
+    // and usually well, but an engraver overrides them where the automatic
+    // choice reads badly. Kept in the context menu rather than the ribbon:
+    // they apply to one specific note you already have in front of you.
+    ...(note.isRest ? [] : [{
+      label: '符尾の向き',
+      submenu: [
+        { label: '自動', active: !note.stemDirection, onClick: () => withSelectedNote((n) => { n.stemDirection = null; }) },
+        { label: '上向き', active: note.stemDirection === 1, onClick: () => withSelectedNote((n) => { n.stemDirection = 1; }) },
+        { label: '下向き', active: note.stemDirection === -1, onClick: () => withSelectedNote((n) => { n.stemDirection = -1; }) },
+      ],
+    }, {
+      label: note.beamBreak ? 'ここで連桁を分けるのをやめる' : 'ここで連桁を分ける',
+      active: !!note.beamBreak,
+      onClick: () => withSelectedNote((n) => { n.beamBreak = !n.beamBreak; }),
+    }]),
+    { separator: true },
     {
       label: '強弱記号',
       submenu: DYNAMIC_OPTIONS.map((v) => ({
@@ -4094,8 +4381,9 @@ function showMultiSelectContextMenu(clientX, clientY) {
   ]);
 }
 
-document.getElementById('btn-range-copy').addEventListener('click', doRangeCopy);
-document.getElementById('btn-range-delete').addEventListener('click', doRangeDelete);
+// 範囲選択のコピー/まとめて削除/ペーストはリボンから外し、譜面上の右クリック
+// メニューだけに集約した (see showRangeContextMenu) — 選択してから離れた
+// リボンのボタンを探しに行くより、選択したその場で出るメニューのほうが早い。
 
 // n番括弧 (see drawVoltaBrackets in staffRenderer.js) — one bracket covers
 // exactly one measure and is set on a single 対象小節, the same way 小節線 /
@@ -4120,7 +4408,6 @@ document.getElementById('btn-volta-clear').addEventListener('click', () => {
   if (!measure) return;
   setVolta(score.measures.indexOf(measure), null);
 });
-document.getElementById('btn-range-paste').addEventListener('click', () => doRangePaste());
 
 // --- テンプレート(空フォーマットのみ)の保存/読み込み ---
 
@@ -4162,14 +4449,19 @@ templateInput.addEventListener('change', async () => {
         clefs: { ...PART_CLEF, ...(tpl.clefs || {}) },
         measures: Array.from({ length: count }, () => createEmptyMeasure()),
       };
+      currentFilePath = null;
       history = [structuredClone(score)];
       historyIndex = 0;
       savedHistoryIndex = 0;
       selected = null;
+      multiSelected = [];
+      noteRangeSelection = null;
       rangeSelection = null;
       selectedMeasureIndex = null;
       syncControlsFromScore();
+      updateRangeLabel();
       render();
+      updateWindowTitle();
       setStatus('テンプレートから作成しました');
     } catch (err) {
       setStatus('テンプレートの読み込みに失敗しました');
@@ -4181,6 +4473,7 @@ templateInput.addEventListener('change', async () => {
 updateRangeLabel();
 updateWidthSliderUI();
 render();
+updateWindowTitle();
 
 // --- 終了時の保存確認 ---
 // main.js intercepts the window's close button and sends 'close-requested'
@@ -4218,10 +4511,11 @@ if (window.electronAPI && window.electronAPI.onCloseRequested) {
     const action = await showCloseConfirmModal();
     if (action === 'cancel') return;
     if (action === 'save') {
-      saveScoreFile();
-      // Give the Blob-download a moment to actually start before the
-      // renderer (and its Blob URL) gets torn down by window.close().
-      await new Promise((resolve) => { setTimeout(resolve, 400); });
+      // Backing out of the save dialog means backing out of the close too —
+      // otherwise "保存して終了" would quietly discard the work it promised to
+      // keep.
+      const saved = await saveScore();
+      if (!saved) return;
     }
     window.electronAPI.respondClose('close');
   });

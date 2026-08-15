@@ -81,6 +81,8 @@
         <button data-tone-action="tie" title="タイ:選択中の音符から、次の同じ高さの音符へタイをつなげます。次に同じ高さの音がなければ自動で追加します" class="icon-btn">タイ</button>
         <button data-tone-action="slur" title="スラー:選択中の音符でクリックした後、スラーの終わりにしたい音符をクリックしてください" class="icon-btn">スラー</button>
         <button data-tone-action="glissando" title="グリッサンド:選択中の音符でクリックした後、グリッサンドの終わりにしたい音符をクリックしてください" class="icon-btn">グリッサンド</button>
+        <button data-tone-action="ottava-8va" title="8va(オクターブ上):選択中の音符でクリックした後、範囲の終わりにしたい音符をクリックしてください。囲まれた音符は1オクターブ高く鳴ります" class="icon-btn">8va</button>
+        <button data-tone-action="ottava-8vb" title="8vb(オクターブ下):選択中の音符でクリックした後、範囲の終わりにしたい音符をクリックしてください。囲まれた音符は1オクターブ低く鳴ります" class="icon-btn">8vb</button>
       </div>
     </div>
     <div class="ribbon-group">
@@ -115,6 +117,13 @@
       <span class="group-label">対象小節</span>
       <div class="group-row">
         <label>番号 <input id="measure-target-input" type="number" min="1" style="width:4em" /></label>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">小節の追加・削除</span>
+      <div class="group-row">
+        <button id="btn-add-measure">追加</button>
+        <button id="btn-remove-measure">削除</button>
       </div>
     </div>
     <div class="ribbon-group">
@@ -226,34 +235,12 @@
   <!-- ==================== EDIT ==================== -->
   <div class="ribbon-panel" data-panel="edit">
     <div class="ribbon-group">
-      <span class="group-label">小節の追加・削除</span>
-      <div class="group-row">
-        <button id="btn-add-measure">追加</button>
-        <button id="btn-remove-measure">削除</button>
-      </div>
-    </div>
-    <div class="ribbon-group">
       <span class="group-label">移調(音階度数)</span>
       <div class="group-row">
         <label>開始 <input id="transpose-from-input" type="number" min="1" style="width:4em" /></label>
         <label>終了 <input id="transpose-to-input" type="number" min="1" style="width:4em" /></label>
         <label>度数 <input id="transpose-steps-input" type="number" step="1" style="width:4em" /></label>
         <button id="btn-transpose">適用</button>
-      </div>
-    </div>
-    <div class="ribbon-group">
-      <span class="group-label">範囲選択(譜面をドラッグ、右クリックでメニュー)</span>
-      <div class="group-row">
-        <span id="range-selection-label" class="range-label">未選択</span>
-        <button id="btn-range-copy">コピー</button>
-        <button id="btn-range-delete">まとめて削除</button>
-      </div>
-    </div>
-    <div class="ribbon-group">
-      <span class="group-label">ペースト</span>
-      <div class="group-row">
-        <label>貼付先小節番号 <input id="paste-target-input" type="number" min="1" style="width:4em" /></label>
-        <button id="btn-range-paste">ペースト</button>
       </div>
     </div>
   </div>
@@ -290,8 +277,9 @@
     <div class="ribbon-group">
       <span class="group-label">ファイル</span>
       <div class="group-row">
-        <button id="btn-save">保存</button>
-        <button id="btn-open">開く</button>
+        <button id="btn-save" title="上書き保存 (Ctrl+S)">保存</button>
+        <button id="btn-save-as" title="名前を付けて保存 (Ctrl+Shift+S)">名前を付けて保存</button>
+        <button id="btn-open" title="開く (Ctrl+O)">開く</button>
         <input id="open-input" type="file" accept="application/json" style="display:none" />
       </div>
     </div>
@@ -370,6 +358,12 @@
     </div>
   </div>
 
+  <!-- Kept out of the ribbon (範囲選択/ペースト are done from the right-click
+       menu now) but still present: the readout is updated as a drag selection
+       grows, and the paste target is what the measure-range paste defaults to. -->
+  <span id="range-selection-label" class="range-label" hidden>未選択</span>
+  <input id="paste-target-input" type="number" min="1" hidden />
+
   <div class="score-scroll">
     <div id="score-container" class="score-container"></div>
   </div>
@@ -397,6 +391,8 @@
         <button data-tone-action="tie" title="タイ" class="icon-btn">タイ</button>
         <button data-tone-action="slur" title="スラー" class="icon-btn">スラー</button>
         <button data-tone-action="glissando" title="グリッサンド" class="icon-btn">グリッサンド</button>
+        <button data-tone-action="ottava-8va" title="8va(オクターブ上)" class="icon-btn">8va</button>
+        <button data-tone-action="ottava-8vb" title="8vb(オクターブ下)" class="icon-btn">8vb</button>
       </div>
       <div class="group-row">
         <button data-link="tuplet3" title="三連符" class="icon-btn">3連符</button>

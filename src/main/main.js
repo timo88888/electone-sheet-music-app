@@ -69,6 +69,60 @@ ipcMain.handle('export-pdf', async (event, defaultFileName) => {
   return { canceled: false, filePath };
 });
 
+// ---------- 楽譜ファイルの保存/読み込み ----------
+//
+// These exist so the app can do a real 上書き保存. The renderer used to save by
+// creating a Blob and clicking a hidden <a download>, which always dropped a
+// new file in the downloads folder — saving three times left score.json,
+// score(1).json and score(2).json, and there was no way to write back over the
+// file you had opened. Going through the main process means the renderer can
+// hold on to a path and save straight to it.
+
+const SCORE_FILTERS = [{ name: '楽譜ファイル', extensions: ['json'] }];
+
+ipcMain.handle('save-score-as', async (event, defaultFileName, contents) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: '名前を付けて保存',
+    defaultPath: defaultFileName || '楽譜.json',
+    filters: SCORE_FILTERS,
+  });
+  if (canceled || !filePath) return { canceled: true };
+  await fs.promises.writeFile(filePath, contents, 'utf-8');
+  return { canceled: false, filePath };
+});
+
+ipcMain.handle('save-score-to', async (event, filePath, contents) => {
+  await fs.promises.writeFile(filePath, contents, 'utf-8');
+  return { canceled: false, filePath };
+});
+
+ipcMain.handle('open-score', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: '楽譜を開く',
+    filters: SCORE_FILTERS,
+    properties: ['openFile'],
+  });
+  if (canceled || filePaths.length === 0) return { canceled: true };
+  const filePath = filePaths[0];
+  const contents = await fs.promises.readFile(filePath, 'utf-8');
+  return { canceled: false, filePath, contents };
+});
+
+// MIDI / WAV. `data` arrives as an ArrayBuffer over IPC and is written as-is.
+ipcMain.handle('save-binary-as', async (event, defaultFileName, filters, data) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: '書き出し',
+    defaultPath: defaultFileName,
+    filters,
+  });
+  if (canceled || !filePath) return { canceled: true };
+  await fs.promises.writeFile(filePath, Buffer.from(data));
+  return { canceled: false, filePath };
+});
+
 // Checks GitHub Releases (see package.json's build.publish config) for a
 // newer version, downloads it in the background, then asks the user to
 // restart once it's ready. Only meaningful for an installed/packaged build —
