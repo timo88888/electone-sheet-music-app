@@ -522,13 +522,31 @@ function redo() {
   restoreHistoryEntry();
 }
 
+// 選択状態(selected / multiSelected)はモジュール変数で、楽譜の編集や Undo を
+// またいで生き残る。いっぽう keyIndex は「その音符の何番目の音か」という、
+// 音符の中身に依存する番号なので、和音の音が減ったあとや Undo で音符が別の
+// 形に戻ったあとには、実在しない番号を指したままになりうる。
+//
+// それをそのまま描画に渡すと VexFlow の setKeyStyle が存在しない符頭を触って
+// 例外になり、楽譜まるごと描けなくなる(画面が真っ白になる)。選択の色付けは
+// 飾りでしかないので、実在しない番号はここで落とす。
 function markSelection() {
   score.measures.forEach((m) => {
     PARTS.forEach((part) => {
       m[part].forEach((n) => {
+        // 休符は符頭がひとつ(索引0)だけ、音符は keys の数だけ符頭を持つ。
+        const toneCount = n.isRest ? 1 : (n.keys || []).length;
+        const addressesATone = (i) => Number.isInteger(i) && i >= 0 && i < toneCount;
+
         n.selected = !!(selected && n.id === selected.noteId);
-        n.selectedKeyIndex = n.selected ? selected.keyIndex : null;
-        const multiHits = multiSelected.filter((s) => s.noteId === n.id);
+        // 選択されていること自体は正しいので、番号だけが古い場合は先頭の音に
+        // 寄せる(選択が見えなくなるより、どの音符かが分かるほうがよい)。
+        if (!n.selected) n.selectedKeyIndex = null;
+        else n.selectedKeyIndex = addressesATone(selected.keyIndex) ? selected.keyIndex : 0;
+
+        const multiHits = multiSelected.filter(
+          (s) => s.noteId === n.id && addressesATone(s.keyIndex),
+        );
         n.multiSelectedKeyIndices = multiHits.length ? multiHits.map((s) => s.keyIndex) : null;
         n.rangeSelected = !!(noteRangeSelection && noteRangeSelection.some((s) => s.noteId === n.id));
       });

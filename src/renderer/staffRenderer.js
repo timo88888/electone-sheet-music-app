@@ -280,6 +280,7 @@ function hasBelowStaffMarks(notes) {
 }
 
 function computeRequiredStaveGap(score, baseStaveGap) {
+  let upperReachAbove = 0;
   let upperReachBelow = 0;
   let lowerReachAbove = 0;
   let lowerReachBelow = 0;
@@ -295,7 +296,10 @@ function computeRequiredStaveGap(score, baseStaveGap) {
       (measure[part] || []).forEach((n) => {
         if (n.isRest) return;
         n.keys.forEach((tone) => {
-          if (part === 'upper') upperReachBelow = Math.max(upperReachBelow, ledgerReachBelow(clef, tone.key));
+          if (part === 'upper') {
+            upperReachAbove = Math.max(upperReachAbove, ledgerReachAbove(clef, tone.key));
+            upperReachBelow = Math.max(upperReachBelow, ledgerReachBelow(clef, tone.key));
+          }
           if (part === 'lower') {
             lowerReachAbove = Math.max(lowerReachAbove, ledgerReachAbove(clef, tone.key));
             lowerReachBelow = Math.max(lowerReachBelow, ledgerReachBelow(clef, tone.key));
@@ -328,6 +332,11 @@ function computeRequiredStaveGap(score, baseStaveGap) {
     // (px) — the per-line dynamics/lyric rows (see below) start just past this
     // so a ledger line under the very column the text starts at can't run
     // through it, whatever the whole score's tallest downward reach is.
+    // 上鍵盤の加線が上へどれだけ伸びるか。上にはもう譜表がないので譜表の
+    // 間隔ではなく「段の上の帯」の高さに効く(renderScore の topBand)。
+    // ここを見ていなかったために、高い和音を積むと加線が帯を突き抜けて
+    // 前の段や用紙の外へはみ出していた。
+    upperReachAbovePx: upperReachAbove * INDEX_STEP_PX,
     upperReachBelowPx: upperReachBelow * INDEX_STEP_PX,
     lowerReachBelowPx: lowerReachBelow * INDEX_STEP_PX,
     // ペダル譜表の下線から下へどれだけ場所がいるか。下にはもう譜表がないので
@@ -443,6 +452,14 @@ function buildStaveNotes(measure, part, clef, keySignature) {
         if (acc) vfNote.addModifier(new Accidental(acc), i);
       });
     }
+    // 選択の色付けは飾りなので、存在しない符頭を指す番号が来ても描画そのものを
+    // 巻き添えにしない。VexFlow の setKeyStyle は範囲外の番号で例外を投げ、
+    // それが renderScore 全体を止めて楽譜が1段も出なくなる。番号の正しさは
+    // app.js の markSelection が担保するが、描画側でも受け止めておく。
+    const styleKey = (idx, style) => {
+      const heads = vfNote.noteHeads || [];
+      if (idx >= 0 && idx < heads.length) vfNote.setKeyStyle(idx, style);
+    };
     if (n.selected) {
       // Highlight only the specific notehead selected within a chord, not
       // every pitch the note carries.
@@ -450,7 +467,7 @@ function buildStaveNotes(measure, part, clef, keySignature) {
       if (n.isRest) {
         vfNote.setStyle({ fillStyle: '#1a73e8', strokeStyle: '#1a73e8' });
       } else {
-        vfNote.setKeyStyle(idx, { fillStyle: '#1a73e8', strokeStyle: '#1a73e8' });
+        styleKey(idx, { fillStyle: '#1a73e8', strokeStyle: '#1a73e8' });
       }
     } else if (n.isRest && n.isPlaceholder) {
       vfNote.setStyle({ fillStyle: PLACEHOLDER_COLOR, strokeStyle: PLACEHOLDER_COLOR });
@@ -469,7 +486,7 @@ function buildStaveNotes(measure, part, clef, keySignature) {
         if (n.isRest) {
           vfNote.setStyle({ fillStyle: color, strokeStyle: color });
         } else {
-          vfNote.setKeyStyle(idx, { fillStyle: color, strokeStyle: color });
+          styleKey(idx, { fillStyle: color, strokeStyle: color });
         }
       });
     }
@@ -480,7 +497,7 @@ function buildStaveNotes(measure, part, clef, keySignature) {
       if (n.isRest) {
         vfNote.setStyle({ fillStyle: '#9c27b0', strokeStyle: '#9c27b0' });
       } else {
-        n.keys.forEach((_, idx) => vfNote.setKeyStyle(idx, { fillStyle: '#9c27b0', strokeStyle: '#9c27b0' }));
+        n.keys.forEach((_, idx) => styleKey(idx, { fillStyle: '#9c27b0', strokeStyle: '#9c27b0' }));
       }
     }
     // Manual stem flip. VexFlow picks a direction from the note's position on
@@ -974,7 +991,17 @@ export function renderScore(container, score, layout = LAYOUT) {
   // ペダル譜表の下線まで。上鍵盤の譜表が持つ上の余白(STAVE_HEADROOM_PX)と
   // ペダル譜表そのものの高さ(STAVE_HEIGHT_PX)まで含めるのが肝心で、ここを
   // 落とすと段どうしが重なり、最後の段は下の余白へせり出してページ番号と重なる。
-  const systemInkHeight = voltaOffset + rehearsalBandHeight
+  // 段の上の帯の高さ。ふつうは rehearsalBandHeight(コード名やリハーサル記号の
+  // 行のぶん)だけでよく、譜表自身が持つ上の余白(STAVE_HEADROOM_PX)が加線を
+  // 受け止めてくれる。けれど上鍵盤に高い和音を積むと加線がそれを越えて伸び、
+  // 帯を突き抜けて前の段や用紙の外へ出てしまうので、はみ出すぶんだけ広げる。
+  // 加線の先端が記号の行の下に収まる高さを求めている。
+  const markRowBottom = 2 + MARK_BOX_HEIGHT;
+  const topBand = Math.max(
+    rehearsalBandHeight,
+    staveGapInfo.upperReachAbovePx - STAVE_HEADROOM_PX + markRowBottom + 6,
+  );
+  const systemInkHeight = voltaOffset + topBand
     + STAVE_HEADROOM_PX + staveGap * 2 + STAVE_HEIGHT_PX;
   const firstPageUsable = pageHeight - topMargin - titleHeaderHeight - pageMargin;
   const laterPageUsable = pageHeight - topMargin - pageMargin;
@@ -1121,7 +1148,7 @@ export function renderScore(container, score, layout = LAYOUT) {
       const measureIndices = lines[line];
       const lineY = topMargin + pageTitleExtra
         + (line - lineStart) * (systemInkHeight + thisPageSystemGap);
-      const staveTopY = lineY + voltaOffset + rehearsalBandHeight;
+      const staveTopY = lineY + voltaOffset + topBand;
       const availableWidth = pageWidth - pageMargin * 2;
       const keySigWidth = keySignatureExtraWidth(score, layout);
       // The first column of every line carries a clef and key signature (and,
@@ -1476,7 +1503,9 @@ export function renderScore(container, score, layout = LAYOUT) {
       if (line > 0 && measureIndices.length > 0) {
         ctx.save();
         ctx.setFont('Times New Roman, serif', 11, 'bold', '');
-        ctx.fillText(String(measureIndices[0] + 1), pageMargin, staveTopY - 4);
+        // 帯の上端(コード名や反復記号と同じ行)に置く。譜表のすぐ上に置くと、
+        // 高い和音の加線が伸びてきたときにその通り道と重なる。
+        ctx.fillText(String(measureIndices[0] + 1), pageMargin, lineY + voltaOffset + markRowBottom - 4);
         ctx.restore();
       }
 
