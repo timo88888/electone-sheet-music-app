@@ -1,13 +1,14 @@
 import {
   Renderer, Stave, StaveNote, StaveConnector, Voice, Formatter, Dot, Beam,
-  BarlineType, StaveTie, Curve, StaveHairpin, Annotation, AnnotationVerticalJustify, Accidental,
-  Articulation, Tuplet, Ornament, Stroke, TextBracket,
+  BarlineType, StaveTie, Curve, StaveHairpin, Accidental, Annotation, AnnotationVerticalJustify,
+  Articulation, Tuplet, Ornament, Stroke, TextBracket, Modifier, Stem, Metrics,
 } from '../../node_modules/vexflow/build/esm/entry/vexflow.js';
 import {
   PARTS, measureCapacity, getClef, REST_ANCHOR_KEY, noteBeats, keySignatureAccidentalCount,
-  tupletNotesOccupied,
+  keySignatureAccidentalForLetter, tupletNotesOccupied, displayChordSymbol,
 } from './scoreModel.js';
 import { parseKey } from './pitchMap.js';
+import { beamGroupsForMeasure } from './beamGroups.js';
 
 // 単音の音符に付く「アーティキュレーション」記号(note.articulation) —
 // VexFlowのArticulation(音符に直接付くグリフ)/Ornament(装飾音)/Stroke(和音の
@@ -29,18 +30,72 @@ const ORNAMENT_CODES = {
 };
 const ARPEGGIO_ARTICULATION = 'arpeggio';
 
+// 配置方向の規則は LilyPond の scm/script.scm をそのまま写したもの
+// (https://lilypond.org/doc/v2.24/Documentation/notation/direction-and-placement)。
+//
+// スタッカート/スタッカーティッシモ/テヌート/アクセント/マルカートは
+// side-relative-direction = DOWN、つまり「符尾と反対側」＝符頭側に置く記号で、
+// 符尾が上向きなら音符の下、下向きなら音符の上に来る。VexFlow の Articulation は
+// 既定で常に ABOVE(上)に置いてしまうので、ここで符尾から明示的に決める。
+const STEM_OPPOSITE_ARTICULATIONS = new Set([
+  'staccato', 'staccatissimo', 'tenuto', 'accent', 'marcato',
+]);
+// フェルマータは script.scm で direction = UP(script-priority 4000)、
+// つまり符尾の向きに関係なく必ず譜表の上。
+const ALWAYS_ABOVE_ARTICULATIONS = new Set(['fermata']);
+
 // Attaches note.articulation to vfNote, picking whichever VexFlow modifier
 // class actually renders that code — a plain articulation glyph (staccato,
 // fermata, ...), a stem-attached ornament (trill, turn, mordent), or an
 // arpeggio wavy line across the whole chord (Stroke, not tied to one key).
+//
+// Ornament(トリル/ターン/モルデント) is left at VexFlow's own default of
+// ABOVE, which already matches script.scm's direction = UP for all three.
 function addArticulationModifier(vfNote, articulation) {
   if (ARTICULATION_CODES[articulation]) {
-    vfNote.addModifier(new Articulation(ARTICULATION_CODES[articulation]), 0);
+    const artic = new Articulation(ARTICULATION_CODES[articulation]);
+    if (ALWAYS_ABOVE_ARTICULATIONS.has(articulation)) {
+      artic.setPosition(Modifier.Position.ABOVE);
+    } else if (STEM_OPPOSITE_ARTICULATIONS.has(articulation)) {
+      artic.setPosition(
+        vfNote.getStemDirection() === Stem.UP ? Modifier.Position.BELOW : Modifier.Position.ABOVE,
+      );
+    }
+    vfNote.addModifier(artic, 0);
   } else if (ORNAMENT_CODES[articulation]) {
     vfNote.addModifier(new Ornament(ORNAMENT_CODES[articulation]), 0);
   } else if (articulation === ARPEGGIO_ARTICULATION) {
     vfNote.addModifier(new Stroke(Stroke.Type.ARPEGGIO_DIRECTIONLESS), 0);
   }
+}
+
+// 強弱記号(p, mf, sfz, …)は本来テキストではなく音楽フォントのグリフ。
+// LilyPond も Emmentaler のダイナミクス字形を使う。VexFlow は SMuFL の
+// U+E520〜 を持っているので、1文字ずつグリフに置き換えて描く
+// (VexFlow 自身の TextDynamics と同じ対応表)。
+const DYNAMIC_GLYPHS = {
+  p: '\uE520', // dynamicPiano
+  m: '\uE521', // dynamicMezzo
+  f: '\uE522', // dynamicForte
+  r: '\uE523', // dynamicRinforzando
+  s: '\uE524', // dynamicSforzando
+  z: '\uE525', // dynamicZ
+  n: '\uE526', // dynamicNiente
+};
+
+// 反復記号のグリフ(SMuFL)。D.C./D.S./Fine は語なのでイタリック文字列のままだが、
+// セーニョとコーダは記号であって文字ではないので専用の字形で描く。
+const SEGNO_GLYPH = '\uE047';
+const CODA_GLYPH = '\uE048';
+
+function dynamicGlyphText(text) {
+  let out = '';
+  for (const ch of String(text)) {
+    const glyph = DYNAMIC_GLYPHS[ch.toLowerCase()];
+    if (!glyph) return null; // 未知の文字が混ざったらグリフ化をあきらめて素のテキストで描く
+    out += glyph;
+  }
+  return out;
 }
 
 // Placeholder rests auto-inserted by the N連符 ribbon flow (see app.js's
@@ -54,18 +109,33 @@ const PLACEHOLDER_COLOR = '#e08a1e';
 const A4_RATIO = 297 / 210;
 
 export const LAYOUT = {
-  // Upper bound only — the actual count is worked out per score from how tall
-  // its systems turn out to be (see renderScore's linesPerPage).
-  linesPerPage: 4,
+  // Upper bound for page 1 only — the actual count is worked out per score
+  // from how tall its systems turn out to be (see renderScore).
+  // 暴走よけの上限で、ふつうはこれより先に紙の高さで決まる。縦スライダーで
+  // 譜表を詰めたときにここで頭打ちにならないよう、余裕を持たせてある。
+  linesPerPage: 8,
+  // 2ページ目以降は曲名の欄がないぶん縦に余裕があるので、段間を詰めて
+  // もう1段(上鍵盤・下鍵盤・ペダルの3段セット)入れる。詰めても入らない楽譜
+  // (加線が長くて譜表の間隔が広がっている等)では自動的に1ページ目と同じ数に
+  // 戻る — renderScore の laterPageLines 参照。
+  extraLinesAfterFirstPage: 1,
   pageWidth: 1050,
   pageHeight: Math.round(1050 * A4_RATIO),
   pageMargin: 40,
-  staveGap: 100,
-  // Vertical gap between one system's measure-number row (just below its
-  // pedal stave) and the next system's mark row. Needs *some* room for
-  // ledger lines plus dynamics/lyric text hanging below the pedal stave.
-  systemGap: 80,
-  topMargin: 110,
+  // 用紙の上端から段の一番上まで。曲名欄のある1ページ目はさらに
+  // titleHeaderHeight だけ下がる。
+  topMargin: 80,
+  // 3段セットの中の譜表と譜表の間隔(上線から次の譜表の上線まで)。2ページ目
+  // 以降にもう1セット入れられるだけの縦の余白を作るために、以前の100pxから
+  // 詰めてある。譜線の間隔を1単位とすると7.2単位で、LilyPond の PianoStaff の
+  // 下限(StaffGrouper.staff-staff-spacing の minimum-distance = 7)より広い。
+  staveGap: 72,
+  // 段と段の間隔 — ペダル譜表の下線から、次の段の一番上(マーク帯の上端)まで。
+  // ここに小節番号・ペダルの強弱記号・ペダルの歌詞が入る。
+  // 上限値であり、ページごとに、そのページに入る段数で縦の余白を配り直す
+  // (renderScore の pageSystemGap)。最後の段ではこの間隔がそのままページ下端の
+  // 余白になるので、ページ番号と重ならないための余裕でもある。
+  systemGap: 66,
   // Band holding コード text and リハーサル/レジストレーション boxes, one line
   // above the stave (see renderScore's per-note mark drawing). Sized so the
   // band's own bottom edge clears the treble clef's tip instead of sitting
@@ -75,7 +145,10 @@ export const LAYOUT = {
   // obstacles the same way it treats a neighboring mark (see
   // upperNoteObstacles). Priority when marks would collide is コード, then
   // リハーサル, then レジストレーション — later ones shift right.
-  rehearsalBandHeight: 29,
+  // 譜表そのものが持つ上の余白(STAVE_HEADROOM_PX = 40px)に *加えて* この帯の
+  // ぶんだけ場所を取る。ト音記号の渦は上線より26pxほど上まで伸びるので、
+  // 譜表自身の40pxの余白の中にこの帯の下端が収まっていれば記号とはぶつからない。
+  rehearsalBandHeight: 12,
   // Now below the pedal stave (moved off the top of the system) — see
   // renderMeasureNumbers in app.js.
   measureNumberHeight: 14,
@@ -84,8 +157,10 @@ export const LAYOUT = {
   keySigWidthPerAccidental: 9,
   keySigBaseWidth: 14,
   // reserved space at the top of page 1 only, for the title/composer/lyricist
-  // text overlay app.js renders on top of the score
-  titleHeaderHeight: 70,
+  // text overlay app.js renders on top of the score.
+  // テンポ表示(♩=100)もこの帯の下端に置かれるので、1段目のマーク帯
+  // (セーニョやコーダが入る)と重ならないだけの高さを取ってある。
+  titleHeaderHeight: 88,
 };
 
 // Extra horizontal room to reserve for the key signature glyph, sized to its
@@ -132,6 +207,14 @@ function measureNominalWidth(measure, avgCount, scale) {
 // a note on the bottom line sits at index 8, one in the space above the top
 // line at index -1, and so on).
 const STAVE_HEIGHT_PX = 40;
+// VexFlow の Stave は渡した y のすぐそこに線を引くのではなく、4間ぶんの余白
+// (spaceAboveStaffLn)を空けてから第1線を引く。つまり譜表が紙を占める高さは
+// この余白 + 五線の高さ。段の高さを数えるときここを落とすと、最後の段が下の
+// 余白へせり出してページ番号と重なる。
+const STAVE_HEADROOM_PX = 40;
+// Stave.getBottomLineY() が返すのは下線そのものではなく、その1間下。
+// 譜表の下に何かを置くコードはこの分だけ余計に下がることを見込んでいる。
+const BOTTOM_LINE_Y_OFFSET = 10;
 const INDEX_STEP_PX = 5;
 // A little extra room beyond the bare minimum so a ledger line doesn't sit
 // pixel-adjacent to the next staff's own top/bottom line.
@@ -178,17 +261,36 @@ function ledgerReachAbove(clef, key) {
 // bottom line to reserve so that text doesn't run into the next stave down
 // when any measure actually has a lyric set for 上鍵盤/下鍵盤 (a score with
 // no lyrics at all keeps relying purely on the note-collision gap above).
-const LYRIC_RESERVE_PX = 28;
+const LYRIC_RESERVE_PX = 18;
+
+// 譜表の下にぶら下がる記号の行の高さ(px)。
+//   ・強弱記号(段ごとに高さを揃えた1行 — drawDynamicsRow)
+//   ・符頭の下に付くアーティキュレーション(スタッカート等)
+// LilyPond も譜表の縦位置を決めるときに譜表の外に出るこれらの記号を勘定に
+// 入れるので、譜表と譜表の間隔にもその分の場所を確保する。
+const DYNAMIC_ROW_PX = 30;
+
+// 段の中で「この記号は譜表の下に出るか」— 強弱記号は必ず下、
+// アーティキュレーションは符尾と反対側なので符尾が上向きのときだけ下に出る。
+// 符尾の向きは描画時にしか分からないので、ここでは下に出うるかどうかで見る。
+function hasBelowStaffMarks(notes) {
+  return (notes || []).some(
+    (n) => n.dynamic || (n.articulation && STEM_OPPOSITE_ARTICULATIONS.has(n.articulation)),
+  );
+}
 
 function computeRequiredStaveGap(score, baseStaveGap) {
   let upperReachBelow = 0;
   let lowerReachAbove = 0;
   let lowerReachBelow = 0;
   let pedalReachAbove = 0;
-  let hasLyrics = false;
+  let pedalReachBelow = 0;
+  const hasLyric = { upper: false, lower: false, pedal: false };
+  const hasMarks = { upper: false, lower: false, pedal: false };
   score.measures.forEach((measure) => {
-    if ((measure.lyrics && (measure.lyrics.upper || measure.lyrics.lower))) hasLyrics = true;
     PARTS.forEach((part) => {
+      if (measure.lyrics && measure.lyrics[part]) hasLyric[part] = true;
+      if (hasBelowStaffMarks(measure[part])) hasMarks[part] = true;
       const clef = getClef(score, part);
       (measure[part] || []).forEach((n) => {
         if (n.isRest) return;
@@ -198,23 +300,41 @@ function computeRequiredStaveGap(score, baseStaveGap) {
             lowerReachAbove = Math.max(lowerReachAbove, ledgerReachAbove(clef, tone.key));
             lowerReachBelow = Math.max(lowerReachBelow, ledgerReachBelow(clef, tone.key));
           }
-          if (part === 'pedal') pedalReachAbove = Math.max(pedalReachAbove, ledgerReachAbove(clef, tone.key));
+          if (part === 'pedal') {
+            pedalReachAbove = Math.max(pedalReachAbove, ledgerReachAbove(clef, tone.key));
+            pedalReachBelow = Math.max(pedalReachBelow, ledgerReachBelow(clef, tone.key));
+          }
         });
       });
     });
   });
-  const upperLowerUnits = upperReachBelow + lowerReachAbove + STAVE_GAP_SAFETY_INDEX_UNITS;
-  const lowerPedalUnits = lowerReachBelow + pedalReachAbove + STAVE_GAP_SAFETY_INDEX_UNITS;
-  let neededPx = Math.max(upperLowerUnits, lowerPedalUnits) * INDEX_STEP_PX;
-  if (hasLyrics) neededPx = Math.max(neededPx, LYRIC_RESERVE_PX);
+
+  // その譜表の下線から、いちばん下にはみ出すものまでの距離(px)。加線の下に
+  // 強弱記号の行、さらにその下に歌詞の行、という順に積み上がる。
+  const roomBelow = (part, ledgerUnits) => {
+    let px = ledgerUnits * INDEX_STEP_PX;
+    if (hasMarks[part]) px += DYNAMIC_ROW_PX;
+    if (hasLyric[part]) px += LYRIC_RESERVE_PX;
+    return px;
+  };
+  const upperLowerPx = roomBelow('upper', upperReachBelow)
+    + (lowerReachAbove + STAVE_GAP_SAFETY_INDEX_UNITS) * INDEX_STEP_PX;
+  const lowerPedalPx = roomBelow('lower', lowerReachBelow)
+    + (pedalReachAbove + STAVE_GAP_SAFETY_INDEX_UNITS) * INDEX_STEP_PX;
+  const neededPx = Math.max(upperLowerPx, lowerPedalPx);
   return {
     gap: Math.max(baseStaveGap, STAVE_HEIGHT_PX + neededPx),
     // How far below its own bottom line 上鍵盤/下鍵盤's lowest note reaches
-    // (px) — the per-line lyric row (see below) starts just past this so a
-    // ledger line under the very column the lyric text starts at can't run
+    // (px) — the per-line dynamics/lyric rows (see below) start just past this
+    // so a ledger line under the very column the text starts at can't run
     // through it, whatever the whole score's tallest downward reach is.
     upperReachBelowPx: upperReachBelow * INDEX_STEP_PX,
     lowerReachBelowPx: lowerReachBelow * INDEX_STEP_PX,
+    // ペダル譜表の下線から下へどれだけ場所がいるか。下にはもう譜表がないので
+    // 譜表の間隔ではなく「段と段の間隔」の下限になる(renderScore の
+    // minSystemGap)。最後の段ではそのままページ下端の余白になり、
+    // ページ番号と重ならないための余裕でもある。
+    pedalBelowPx: roomBelow('pedal', pedalReachBelow),
   };
 }
 
@@ -265,22 +385,62 @@ function pitchId(key) {
   return m ? `${m[1].toLowerCase()}/${m[2]}` : key;
 }
 
-function buildStaveNotes(measure, part, clef) {
+// --- 臨時記号をいつ書くか(LilyPond の既定 accidentalStyle) ----------------
+//
+// 「臨時記号は必要になった音符に一度だけ書き、同じ小節の同じオクターヴでは
+// 繰り返さない。小節線で効力が切れる」という譜面の基本規則。調号がすでに与えて
+// いる変化(ト長調のファ♯など)も書かない。逆に、直前で臨時記号がついた音を
+// 元に戻すときはナチュラルを書く。
+//
+// この楽譜モデルは音高を常に明示的な綴り(c#/4 など)で持っているので、そのまま
+// 描くと同じ小節に何度も♯が並んでしまう。ここで「実際に鳴る変化」と「その時点で
+// 有効な変化」を突き合わせ、食い違うときだけ記号を出す。
+//
+// LilyPond の既定は譜表(Staff)単位なので、上鍵盤/下鍵盤/ペダルそれぞれ独立に
+// 数える(この関数がパートごとに呼ばれるのがそれに当たる)。
+function accidentalsForMeasure(notes, keySignature) {
+  const active = new Map(); // "C4" -> 今その音に効いている変化 ('' / '#' / 'b' / '##' / 'bb')
+  return notes.map((n) => {
+    if (n.isRest) return [];
+    return n.keys.map((tone) => {
+      const { letter, accidental, octave } = parseKey(tone.key);
+      const fromKeySig = keySignatureAccidentalForLetter(keySignature, letter);
+      // 綴りに記号がなければ調号どおりに鳴る。'n' は明示的なナチュラル(=変化なし)。
+      let sounding;
+      if (accidental === '') sounding = fromKeySig;
+      else if (accidental === 'n') sounding = '';
+      else sounding = accidental;
+      const slot = `${letter}${octave}`;
+      const effective = active.has(slot) ? active.get(slot) : fromKeySig;
+      active.set(slot, sounding);
+      if (sounding === effective) return null;
+      return sounding === '' ? 'n' : sounding;
+    });
+  });
+}
+
+function buildStaveNotes(measure, part, clef, keySignature) {
   const notes = measure[part];
   if (notes.length === 0) {
     const restKey = REST_ANCHOR_KEY[clef] || 'b/4';
     return [{ vfNote: new StaveNote({ keys: [restKey], duration: 'wr', clef }), noteRef: null }];
   }
-  return notes.map((n) => {
+  const accidentals = accidentalsForMeasure(notes, keySignature);
+  return notes.map((n, noteIndex) => {
     const durStr = `${n.duration}${n.dotted ? 'd' : ''}${n.isRest ? 'r' : ''}`;
     const restKey = REST_ANCHOR_KEY[clef] || 'b/4';
     const keyStrings = n.isRest ? [restKey] : n.keys.map((tone) => tone.key);
-    const vfNote = new StaveNote({ keys: keyStrings, duration: durStr, clef });
+    // autoStem — 符尾の向きは「第3線より上なら下向き、下なら上向き」で決まる
+    // (和音は中央線からいちばん遠い音で決める)。VexFlow の StaveNote は指定が
+    // なければ常に上向きにしてしまうので、明示的に自動判定を有効にする。連桁で
+    // つながれた音符はこのあと群単位で向きが揃えられる(buildBeams参照)。
+    const vfNote = new StaveNote({
+      keys: keyStrings, duration: durStr, clef, autoStem: true,
+    });
     if (n.dotted) Dot.buildAndAttach([vfNote], { all: true });
     if (!n.isRest) {
-      n.keys.forEach((tone, i) => {
-        const accMatch = /^[a-gA-G](#{1,2}|b{1,2}|n)\//.exec(tone.key);
-        if (accMatch) vfNote.addModifier(new Accidental(accMatch[1]), i);
+      (accidentals[noteIndex] || []).forEach((acc, i) => {
+        if (acc) vfNote.addModifier(new Accidental(acc), i);
       });
     }
     if (n.selected) {
@@ -330,16 +490,95 @@ function buildStaveNotes(measure, part, clef) {
     if (!n.isRest && (n.stemDirection === 1 || n.stemDirection === -1)) {
       vfNote.setStemDirection(n.stemDirection);
     }
+    return { vfNote, noteRef: n };
+  });
+}
+
+// 音符そのものではなく音符に「付く」記号 — アーティキュレーション、運指、
+// 強弱記号 — を後から取り付ける。
+//
+// アーティキュレーションの上下は符尾の向きから決まる(script.scm の
+// side-relative-direction、addArticulationModifier 参照)。符尾の向きは連桁を
+// 組んだ時点で群ごとに揃えられて初めて確定するので、この処理は buildBeams の
+// あとでなければならない。
+function attachNoteModifiers(built) {
+  built.forEach(({ vfNote, noteRef: n }) => {
+    if (!n) return;
     if (n.articulation) {
       addArticulationModifier(vfNote, n.articulation);
     }
-    if (n.dynamic) {
-      // dynamics conventionally sit below the staff
-      const anno = new Annotation(n.dynamic);
-      anno.setVerticalJustification(AnnotationVerticalJustify.BOTTOM);
-      vfNote.addModifier(anno, 0);
+    // 運指(fingering)。LilyPond の Fingering は fingeringOrientations の既定が
+    // '(up down) で、まず上を試すので、既定は音符の上、必要なら下に回せる。
+    //
+    // VexFlow の FretHandFinger はタブ譜向けで、上下に置いても符頭から7pxしか
+    // 離れず符頭や符尾に重なってしまうので使わない。Annotation は符尾の向きを
+    // 見て符尾の先の外側に置いてくれるので、そちらに小さな数字として載せる。
+    if (!n.isRest && n.fingering) {
+      const finger = new Annotation(String(n.fingering));
+      finger.setFont('Times New Roman, serif', 11, '', '');
+      finger.setVerticalJustification(
+        n.fingeringBelow ? AnnotationVerticalJustify.BOTTOM : AnnotationVerticalJustify.TOP,
+      );
+      vfNote.addModifier(finger, 0);
     }
-    return { vfNote, noteRef: n };
+    // 強弱記号は音符に貼りつけるのではなく、段ごとに高さを揃えて別に描く
+    // (LilyPond の DynamicLineSpanner と同じ考えかた)。renderScore の
+    // 「強弱記号の行」を参照。
+  });
+}
+
+// 強弱記号を1段ぶんまとめて描く。
+//
+// LilyPond は同じ段の強弱記号を DynamicLineSpanner という1本の線の上に載せて
+// 高さを揃える — 音符の高さにつられて記号が上下すると読み取りにくいからで、
+// 印刷譜もそうなっている。音符ごとの修飾として描くと VexFlow は音符の高さから
+// 位置を決めてしまうので、ここで段単位に描く(歌詞の行と同じやりかた)。
+function drawDynamicsRow(ctx, entries, y) {
+  ctx.save();
+  entries.forEach(({ x, text }) => {
+    const glyph = dynamicGlyphText(text);
+    if (glyph) ctx.setFont(Metrics.get('fontFamily'), Metrics.get('fontSize'), '', '');
+    else ctx.setFont('Times New Roman, serif', 13, 'bold', 'italic');
+    ctx.fillText(glyph || text, x, y);
+  });
+  ctx.restore();
+}
+
+// 1小節ぶん(1パート)の連桁を組む。どの音符とどの音符をつなぐかの規則は
+// beamGroups.js(LilyPond の拍子ごとの連桁規則の移植)が決め、ここはその結果を
+// VexFlow の Beam に変換するだけ。
+//
+// VexFlow 自身の Beam.generateBeams は拍子を知らず、常に4分音符ぶん(8分音符
+// 2つずつ)で区切ってしまうので使わない。
+function buildBeams(built, timeSig) {
+  const notes = built.map((b) => b.noteRef).filter(Boolean);
+  if (notes.length !== built.length) return []; // 空小節の代替全休符だけの並び
+  return beamGroupsForMeasure(notes, timeSig).map((indices) => {
+    const vfNotes = indices.map((i) => built[i].vfNote);
+    // 群の中で符尾の向きは揃える。利用者が手で向きを指定した音符が
+    // ひとつでもあればそれを群全体に適用し、なければ自動判定に任せる。
+    const forced = indices
+      .map((i) => built[i].noteRef.stemDirection)
+      .find((d) => d === 1 || d === -1);
+    if (forced) {
+      vfNotes.forEach((vf) => vf.setStemDirection(forced));
+      return new Beam(vfNotes);
+    }
+    return new Beam(vfNotes, true);
+  });
+}
+
+// 連符の括弧と数字の置きかた(LilyPond の TupletBracket)。
+//   ・向きは符尾の側 (direction は符尾に従う)
+//   ・連桁でつながっている群には括弧を書かず数字だけにする
+//     (bracket-visibility の既定 #'if-no-beam)
+// 連桁を作ったあとでないと hasBeam() が確定しないので、描画直前に呼ぶ。
+function applyTupletPlacement(tuplets) {
+  tuplets.forEach((tuplet) => {
+    const notes = tuplet.getNotes();
+    const down = notes.filter((vf) => vf.getStemDirection() === Stem.DOWN).length;
+    tuplet.setTupletLocation(down > notes.length / 2 ? Tuplet.LOCATION_BOTTOM : Tuplet.LOCATION_TOP);
+    tuplet.setBracketed(notes.some((vf) => !vf.hasBeam()));
   });
 }
 
@@ -419,7 +658,8 @@ function drawGlissandoLine(ctx, a, b) {
   ctx.lineTo(b.x, b.y);
   ctx.stroke();
   ctx.closePath();
-  ctx.setFont('Arial', 9, 'italic');
+  // setFont は (family, size, weight, style) — 4番目がイタリック。
+  ctx.setFont('Times New Roman, serif', 10, '', 'italic');
   ctx.fillText('gliss.', (a.x + b.x) / 2 - 10, (a.y + b.y) / 2 - 4);
   ctx.restore();
 }
@@ -488,6 +728,53 @@ function drawMarkBox(ctx, text, centerX, boxY) {
   return { x0: boxX, x1: boxX + width };
 }
 
+// 反復記号(セーニョ/コーダ/To Coda/D.C./D.S./Fine)を1小節ぶん描く。
+//
+// 置きかたは記号の意味で決まる:
+//   ・セーニョとコーダは「戻ってくる/飛んでくる先」の目印なので小節の頭
+//   ・To Coda・D.C.・D.S.・Fine は「ここまで来たらこうする」という指示なので
+//     小節の終わり
+//
+// セーニョ(𝄋)とコーダ(𝄌)は文字ではなく記号なので音楽フォントの字形で描き、
+// 添える語(Coda / to / D.C. / D.S. / Fine)は欧文で描く。1つの表示が
+// 「記号」と「語」の2片に分かれることがある(𝄌 Coda、to 𝄌)ので、片ごとに
+// フォントを持たせて左から並べる。
+const REPEAT_MARKER_PARTS = {
+  Segno: [{ text: SEGNO_GLYPH, glyph: true }],
+  Coda: [{ text: CODA_GLYPH, glyph: true }, { text: ' Coda', glyph: false, upright: true }],
+  'To Coda': [{ text: 'to ', glyph: false, upright: true }, { text: CODA_GLYPH, glyph: true }],
+};
+// 小節の頭に置く記号 — 飛んでくる先を指すもの。
+const REPEAT_MARKERS_AT_START = new Set(['Segno', 'Coda']);
+
+const MARKER_GLYPH_SIZE = 20;
+const MARKER_TEXT_SIZE = 13;
+// 記号と語のあいだの隙間(px)。空白文字だけでは詰まって見える。
+const MARKER_PART_GAP = 3;
+
+function drawRepeatMarker(ctx, marker, x, measureWidth, baselineY) {
+  const parts = REPEAT_MARKER_PARTS[marker] || [{ text: marker, glyph: false }];
+  const musicFont = Metrics.get('fontFamily');
+  const setPartFont = (part) => {
+    if (part.glyph) ctx.setFont(musicFont, MARKER_GLYPH_SIZE, '', '');
+    // 語のうち Coda / to は記号に添える名前なので立体、D.C./D.S./Fine は
+    // 演奏の指示語なのでイタリック(印刷譜の慣習)。
+    else if (part.upright) ctx.setFont('Times New Roman, serif', MARKER_TEXT_SIZE, 'bold', '');
+    else ctx.setFont('Times New Roman, serif', MARKER_TEXT_SIZE, 'bold', 'italic');
+  };
+
+  ctx.save();
+  const widths = parts.map((part) => { setPartFont(part); return ctx.measureText(part.text).width; });
+  const total = widths.reduce((a, b) => a + b, 0) + MARKER_PART_GAP * (parts.length - 1);
+  let cursorX = REPEAT_MARKERS_AT_START.has(marker) ? x + 4 : x + measureWidth - total - 4;
+  parts.forEach((part, i) => {
+    setPartFont(part);
+    ctx.fillText(part.text, cursorX, baselineY);
+    cursorX += widths[i] + MARKER_PART_GAP;
+  });
+  ctx.restore();
+}
+
 // Finds whichever part has a note starting exactly at `beat` (within float
 // epsilon) in this measure — used to anchor a リハーサル/レジストレーション
 // mark's x position, since marks.beat is shared across parts/chord-tones
@@ -550,6 +837,7 @@ function drawVoltaBrackets(ctx, score, measureIndices, measureColumns, lineY) {
 // コード it would overlap, then レジストレーション nudges right of both.
 function drawPerNoteMarks({
   ctx, page, measureIndex, measure, notesHitByPart, boxY, markHitMap, showChordSymbols,
+  keySignature,
 }) {
   const shiftPast = (centerX, width, placed) => {
     let cx = centerX;
@@ -588,9 +876,11 @@ function drawPerNoteMarks({
     // e.g. a symmetric dim7) prints in orange — click it to pick from the
     // real candidates instead of the free-form editor.
     if (note.chordTentative) ctx.setFillStyle(PLACEHOLDER_COLOR);
-    ctx.fillText(note.chord, x, y);
+    // 綴りは楽譜の調号に合わせて読み替えて書く(ヘ長調なら A# ではなく Bb)。
+    const chordText = displayChordSymbol(note.chord, keySignature);
+    ctx.fillText(chordText, x, y);
     ctx.restore();
-    const w = textWidthAt(ctx, note.chord, 10);
+    const w = textWidthAt(ctx, chordText, 10);
     const x0 = x - 2;
     const x1 = x + w + 2;
     markHitMap.push({
@@ -640,15 +930,24 @@ export function renderScore(container, score, layout = LAYOUT) {
   const pages = [];
 
   const {
-    pageWidth, pageHeight, pageMargin, systemGap, topMargin,
+    pageWidth, pageHeight, pageMargin, topMargin,
     rehearsalBandHeight, measureNumberHeight, clefExtraWidth, timeSigExtraWidth, titleHeaderHeight,
   } = layout;
   // Widened beyond layout's own default when a 上鍵盤 note's ledger lines
   // reaching down would otherwise collide with a 下鍵盤 note's reaching up
   // (or the same for 下鍵盤/ペダル) — see computeRequiredStaveGap. Applied
   // uniformly to every system in the score, never just the offending one.
-  const staveGapInfo = computeRequiredStaveGap(score, layout.staveGap);
+  // 形式タブの縦スライダー(score.systemHeightScale)で3段セットの高さを縮める/
+  // 広げる。縮めれば1ページに入る段数が増える。ただし加線や譜表の下の記号が
+  // ぶつかる分は computeRequiredStaveGap が押し戻すので、譜面が壊れるほどは
+  // 詰まらない。
+  const heightScale = score.systemHeightScale || 1;
+  const scaledStaveGap = Math.round(layout.staveGap * heightScale);
+  const staveGapInfo = computeRequiredStaveGap(score, scaledStaveGap);
   const staveGap = staveGapInfo.gap;
+  // 段と段の間隔も縦スライダーで一緒に伸び縮みさせる。譜表だけ詰めて段の
+  // あいだが空いたままだと、詰めたぶんが段数に結びつかない。
+  const systemGap = Math.round(layout.systemGap * heightScale);
   // 1番括弧/2番括弧 etc. (see drawVoltaBrackets) need their own row above the
   // existing chord/リハーサル/レジストレーション band — reserved only when the
   // score actually uses one, so scores that don't stay exactly as tight to
@@ -657,24 +956,60 @@ export function renderScore(container, score, layout = LAYOUT) {
   const hasVolta = score.measures.some((m) => m.volta);
   const voltaOffset = hasVolta ? VOLTA_BAND_HEIGHT : 0;
 
+
   const lines = computeLines(score, layout);
   const totalLines = lines.length;
 
-  // How tall one system slot is, and therefore how many fit on a page.
+  // 1ページに何段(上鍵盤・下鍵盤・ペダルの3段で1セット＝1段落)入るか。
   //
-  // staveGap grows to clear the score's tallest ledger lines (see
-  // computeRequiredStaveGap), and a score using n番括弧 reserves a band above
-  // every system as well — so a fixed count (this used to be a flat 4) could
-  // silently run the last system off the bottom of the page. Page 1 is the
-  // tightest because of the title block, and the same count is used for every
-  // page so a line's page is still just `floor(line / linesPerPage)`.
-  const lineHeight = staveGap * 2 + systemGap + rehearsalBandHeight + voltaOffset;
-  const usableHeight = pageHeight - topMargin - titleHeaderHeight - pageMargin;
-  const linesPerPage = Math.max(1, Math.min(
+  // 1ページ目だけは曲名・作詞・作曲の欄が上を占めるので、その分だけ入る数が
+  // 少ない。2ページ目以降はその欄がなく縦に余裕があるので、段と段の間隔を
+  // 詰めればもう1セット入る — 入るなら入れる、詰めても入らないなら1ページ目と
+  // 同じ数のままにして、はみ出させない。
+  //
+  // staveGap は楽譜中のいちばん長い加線に合わせて広がる(computeRequiredStaveGap)
+  // ので、段の高さは楽譜ごとに変わる。段数を決め打ちにせず毎回この計算をする。
+  //
+  // systemInkHeight は1段が実際に紙を占める高さ — マーク帯の上端から
+  // ペダル譜表の下線まで。上鍵盤の譜表が持つ上の余白(STAVE_HEADROOM_PX)と
+  // ペダル譜表そのものの高さ(STAVE_HEIGHT_PX)まで含めるのが肝心で、ここを
+  // 落とすと段どうしが重なり、最後の段は下の余白へせり出してページ番号と重なる。
+  const systemInkHeight = voltaOffset + rehearsalBandHeight
+    + STAVE_HEADROOM_PX + staveGap * 2 + STAVE_HEIGHT_PX;
+  const firstPageUsable = pageHeight - topMargin - titleHeaderHeight - pageMargin;
+  const laterPageUsable = pageHeight - topMargin - pageMargin;
+
+  // ペダル譜の下線から次の段の最上端までにあけたい間隔(px)。ここに入るのは
+  // 小節番号、ペダルの強弱記号、ペダルの歌詞。最後の段ではページ下端の余白に
+  // なるので、この幅が確保されているかぎりページ番号とも重ならない。
+  const minSystemGap = Math.max(
+    BOTTOM_LINE_Y_OFFSET + 4 + measureNumberHeight + 8,
+    staveGapInfo.pedalBelowPx + BOTTOM_LINE_Y_OFFSET + 8,
+  );
+
+  const firstPageLines = Math.max(1, Math.min(
     layout.linesPerPage,
-    Math.floor(usableHeight / lineHeight),
+    Math.floor(firstPageUsable / (systemInkHeight + systemGap)),
   ));
-  const totalPages = Math.max(1, Math.ceil(totalLines / linesPerPage));
+  const wantedLaterLines = firstPageLines + layout.extraLinesAfterFirstPage;
+  const gapForWantedLater = Math.floor(laterPageUsable / wantedLaterLines) - systemInkHeight;
+  const laterPageLines = gapForWantedLater >= minSystemGap ? wantedLaterLines : firstPageLines;
+
+  const pageCapacity = (page) => (page === 0 ? firstPageLines : laterPageLines);
+  // その枚数の段でページを満たすときの段間。詰まりすぎない範囲で、余った縦の
+  // 余白を段の間に配る(LilyPond の垂直スペーシングと同じ考えかた)。
+  const pageSystemGap = (page) => {
+    const usable = page === 0 ? firstPageUsable : laterPageUsable;
+    const fitted = Math.floor(usable / pageCapacity(page)) - systemInkHeight;
+    return Math.max(minSystemGap, Math.min(systemGap, fitted));
+  };
+
+  const totalPages = totalLines <= firstPageLines
+    ? 1
+    : 1 + Math.ceil((totalLines - firstPageLines) / laterPageLines);
+  // 段番号 → そのページの先頭段番号。ページごとに入る段数が違うので
+  // 単純な割り算では出せない。
+  const pageLineStart = (page) => (page === 0 ? 0 : firstPageLines + (page - 1) * laterPageLines);
 
   // Cross-measure connectors (ties/slurs/hairpins) are built as soon as both
   // endpoints are known, but only drawn in a final pass once every stave on
@@ -691,12 +1026,19 @@ export function renderScore(container, score, layout = LAYOUT) {
   const deferredMarks = [];
   const pendingTie = {}; // part -> Map<pitchId, { vfNote, keyIndex, line, ctx }>
   const pendingHairpin = {}; // part -> { vfNote, line, ctx, kind } (hairpins stay whole-note)
-  const builtByNoteId = new Map(); // noteId -> { vfNote, line, ctx }
+  const builtByNoteId = new Map(); // noteId -> { vfNote, line, ctx, part }
+  // 段をまたぐ 8va/8vb 括弧を段ごとに切って描くために、パート×段ごとの
+  // いちばん左/右の音符を覚えておく(下の ottavaLinks の描画で使う)。
+  const lineEdgeNotes = new Map(); // "part|line" -> { first, last }
 
   const noteById = new Map();
+  const partByNoteId = new Map();
   score.measures.forEach((measure) => {
     PARTS.forEach((part) => {
-      measure[part].forEach((n) => noteById.set(n.id, n));
+      measure[part].forEach((n) => {
+        noteById.set(n.id, n);
+        partByNoteId.set(n.id, part);
+      });
     });
   });
   const slurLinks = [];
@@ -771,13 +1113,14 @@ export function renderScore(container, score, layout = LAYOUT) {
     }
     const ctx = renderer.getContext();
 
-    const lineStart = page * linesPerPage;
-    const lineEnd = Math.min(totalLines, lineStart + linesPerPage);
+    const lineStart = pageLineStart(page);
+    const lineEnd = Math.min(totalLines, lineStart + pageCapacity(page));
+    const thisPageSystemGap = pageSystemGap(page);
 
     for (let line = lineStart; line < lineEnd; line++) {
       const measureIndices = lines[line];
       const lineY = topMargin + pageTitleExtra
-        + (line - lineStart) * (staveGap * 2 + systemGap + rehearsalBandHeight + voltaOffset);
+        + (line - lineStart) * (systemInkHeight + thisPageSystemGap);
       const staveTopY = lineY + voltaOffset + rehearsalBandHeight;
       const availableWidth = pageWidth - pageMargin * 2;
       const keySigWidth = keySignatureExtraWidth(score, layout);
@@ -808,6 +1151,9 @@ export function renderScore(container, score, layout = LAYOUT) {
       let linePedalStave = null;
       const lineStaves = { upper: null, lower: null, pedal: null };
       const measureColumns = {}; // measureIndex -> { x, width } — see drawVoltaBrackets
+      // この段に出てくる強弱記号を集めておいて、小節を描き終えてから
+      // パートごとに高さを揃えて描く(drawDynamicsRow)。
+      const lineDynamics = { upper: [], lower: [], pedal: [] };
       measureIndices.forEach((m, colIndex) => {
         const isFirstOfLine = colIndex === 0;
         const measureWidth = isFirstOfLine ? widths[colIndex] + firstColExtra : widths[colIndex];
@@ -867,15 +1213,36 @@ export function renderScore(container, score, layout = LAYOUT) {
         }
         const leftLine = new StaveConnector(staves.upper, staves.pedal).setType('singleLeft');
         leftLine.setContext(ctx).draw();
+        // 小節線は3段を貫いて引く。鍵盤楽譜では上鍵盤・下鍵盤・ペダルが
+        // ひとつの組(大譜表)なので、小節の区切りは組全体を縦に貫くのが決まり。
+        //
+        // 各譜表が自前で引く小節線は譜表の中で切れてしまうので、譜表と譜表の
+        // あいだも同じ形でつなぐ。ふつうの小節線は次の小節の singleLeft が
+        // つないでくれるが、複縦線・終止線・リピートは形が違うので、その小節の
+        // 右端に同じ形の連結線を引く。段の最後の小節には次の小節が来ないので、
+        // ふつうの小節線もここで引く。
+        const endConnectorType = (() => {
+          if (measure.repeatEnd) return 'boldDoubleRight';
+          if (measure.barlineEnd === 'final') return 'boldDoubleRight';
+          if (measure.barlineEnd === 'double') return 'thinDouble';
+          return colIndex === measureIndices.length - 1 ? 'singleRight' : null;
+        })();
+        if (endConnectorType) {
+          new StaveConnector(staves.upper, staves.pedal)
+            .setType(endConnectorType).setContext(ctx).draw();
+        }
+        if (measure.repeatStart) {
+          new StaveConnector(staves.upper, staves.pedal)
+            .setType('boldDoubleLeft').setContext(ctx).draw();
+        }
 
-        // D.C./D.S./Fine/Coda playback-jump marker — right-aligned in the
-        // コード row, independent of those per-note marks.
+        // セーニョ/コーダ/D.C./D.S./Fine — コード行と同じ帯に、記号の意味に応じて
+        // 小節の頭または終わりに寄せて描く(drawRepeatMarker)。
         if (measure.marker) {
-          ctx.save();
-          ctx.setFont('Arial', 10, 'bold');
-          const w = ctx.measureText(measure.marker).width;
-          ctx.fillText(measure.marker, x + measureWidth - w - 4, lineY + rehearsalBandHeight - 6);
-          ctx.restore();
+          drawRepeatMarker(
+            ctx, measure.marker, x, measureWidth,
+            lineY + voltaOffset + 2 + MARK_BOX_HEIGHT - 4,
+          );
         }
 
         // Measure number now sits just below the pedal (bass) stave rather
@@ -898,7 +1265,7 @@ export function renderScore(container, score, layout = LAYOUT) {
         PARTS.forEach((part) => {
           const stave = staves[part];
           const clef = getClef(score, part);
-          const built = buildStaveNotes(measure, part, clef);
+          const built = buildStaveNotes(measure, part, clef, score.keySignature);
           const vfNotes = built.map((b) => b.vfNote);
           // Tuplets must be built before the Voice/Formatter run: creating a
           // Tuplet immediately applies the tick-multiplier to its notes so
@@ -906,6 +1273,12 @@ export function renderScore(container, score, layout = LAYOUT) {
           const tuplets = buildTuplets(built).map(
             (g) => new Tuplet(g.notes, { notesOccupied: g.notesOccupied }),
           );
+          // 連桁は拍子に沿って組む(buildBeams)。ここで群ごとに符尾の向きが
+          // 確定するので、符尾の向きに依存するアーティキュレーションの取り付けと
+          // 連符の括弧の向き/有無の判定はそのあとで行う。
+          const beams = buildBeams(built, score.timeSig);
+          attachNoteModifiers(built);
+          applyTupletPlacement(tuplets);
 
           // VexFlow 5's VoiceTime keys are numBeats/beatValue (camelCase) —
           // the snake_case spelling this used to pass was dropped silently by
@@ -943,21 +1316,6 @@ export function renderScore(container, score, layout = LAYOUT) {
           const fullWidth = Math.max(widths[colIndex] - 20, 20);
           const targetWidth = Math.max(30, fullWidth * fillRatio);
           new Formatter().joinVoices([voice]).format([voice], targetWidth);
-          // Beams are grouped automatically, but a note flagged beamBreak
-          // starts a fresh group — the manual override an engraver reaches for
-          // when the automatic grouping obscures the beat structure. Each run
-          // between breaks is beamed on its own.
-          const beams = [];
-          let beamSegment = [];
-          const flushBeamSegment = () => {
-            if (beamSegment.length > 0) beams.push(...Beam.generateBeams(beamSegment));
-            beamSegment = [];
-          };
-          built.forEach((b) => {
-            if (b.noteRef && b.noteRef.beamBreak) flushBeamSegment();
-            beamSegment.push(b.vfNote);
-          });
-          flushBeamSegment();
           voice.draw(ctx, stave);
           beams.forEach((b) => b.setContext(ctx).draw());
           tuplets.forEach((t) => t.setContext(ctx).draw());
@@ -969,7 +1327,15 @@ export function renderScore(container, score, layout = LAYOUT) {
           const real = built.filter((b) => b.noteRef);
           real.forEach((b) => {
             const n = b.noteRef;
-            builtByNoteId.set(n.id, { vfNote: b.vfNote, line, ctx });
+            builtByNoteId.set(n.id, {
+              vfNote: b.vfNote, line, ctx, part,
+            });
+            if (!n.isRest) {
+              const edgeKey = `${part}|${line}`;
+              const edge = lineEdgeNotes.get(edgeKey);
+              if (!edge) lineEdgeNotes.set(edgeKey, { first: b.vfNote, last: b.vfNote });
+              else edge.last = b.vfNote;
+            }
 
             // Hairpins stay a whole-note mark (not per-tone).
             if (n.hairpin === 'cresc-start' || n.hairpin === 'decresc-start') {
@@ -1061,6 +1427,14 @@ export function renderScore(container, score, layout = LAYOUT) {
             xs: b.noteRef.isRest ? undefined : b.vfNote.noteHeads.map((nh) => nh.getAbsoluteX()),
           }));
 
+          notesHit.forEach((hit) => {
+            if (!hit.noteRef || !hit.noteRef.dynamic) return;
+            lineDynamics[part].push({
+              x: hit.xs ? Math.min(...hit.xs) : hit.x,
+              text: hit.noteRef.dynamic,
+            });
+          });
+
           hitMap.push({
             part,
             measureIndex: m,
@@ -1084,11 +1458,26 @@ export function renderScore(container, score, layout = LAYOUT) {
           boxY: lineY + voltaOffset + 2,
           markHitMap,
           showChordSymbols: score.showChordSymbols !== false,
+          keySignature: score.keySignature,
         });
       });
 
       if (hasVolta) {
         drawVoltaBrackets(ctx, score, measureIndices, measureColumns, lineY);
+      }
+
+      // 小節番号(LilyPond の BarNumber)。既定では各段の先頭に、譜表の上へ小さく
+      // 添える。曲の1小節目には付けない(break-visibility の既定
+      // #end-of-line-invisible がそう振る舞う)。
+      //
+      // 画面上の .measure-number-label(app.js)は小節を選ぶためのクリック領域で、
+      // 印刷時には消える編集用の部品なので、印刷される番号はここで譜面そのものに
+      // 描く。
+      if (line > 0 && measureIndices.length > 0) {
+        ctx.save();
+        ctx.setFont('Times New Roman, serif', 11, 'bold', '');
+        ctx.fillText(String(measureIndices[0] + 1), pageMargin, staveTopY - 4);
+        ctx.restore();
       }
 
       // 歌詞 — one line of text per system *per staff* (上鍵盤/下鍵盤/ペダル
@@ -1097,7 +1486,21 @@ export function renderScore(container, score, layout = LAYOUT) {
       // 上鍵盤/下鍵盤 sit just below their own bottom line, in the gap before
       // the next stave down; ペダル keeps its previous spot below the measure
       // number, since there's no further stave below it to make room in.
-      const reachBelowPxByPart = { upper: staveGapInfo.upperReachBelowPx, lower: staveGapInfo.lowerReachBelowPx };
+      const reachBelowPxByPart = {
+        upper: staveGapInfo.upperReachBelowPx, lower: staveGapInfo.lowerReachBelowPx, pedal: 0,
+      };
+
+      // 強弱記号の行 — 段の中では音符の高さに関わらず1本の高さに揃える
+      // (LilyPond の DynamicLineSpanner)。譜表の下、加線より下から始める。
+      const dynamicRowY = {};
+      ['upper', 'lower', 'pedal'].forEach((part) => {
+        const stave = lineStaves[part];
+        if (!stave || lineDynamics[part].length === 0) return;
+        const y = stave.getBottomLineY() + Math.max(26, reachBelowPxByPart[part] + 16);
+        dynamicRowY[part] = y;
+        drawDynamicsRow(ctx, lineDynamics[part], y);
+      });
+
       ['upper', 'lower', 'pedal'].forEach((part) => {
         const lineLyric = measureIndices.map((m) => score.measures[m].lyrics[part]).find((t) => t);
         const stave = lineStaves[part];
@@ -1106,10 +1509,12 @@ export function renderScore(container, score, layout = LAYOUT) {
         // line reaching further down than that (see computeRequiredStaveGap)
         // pushes the lyric to start past it instead of running through it —
         // whatever the whole score's tallest reach turns out to be, applied
-        // uniformly rather than checked per measure/column.
-        const lyricY = part === 'pedal'
+        // uniformly rather than checked per measure/column. 強弱記号の行が
+        // あるときはさらにその下から始める。
+        const base = part === 'pedal'
           ? stave.getBottomLineY() + measureNumberHeight + 10
           : stave.getBottomLineY() + Math.max(14, reachBelowPxByPart[part] + 8);
+        const lyricY = dynamicRowY[part] ? Math.max(base, dynamicRowY[part] + 15) : base;
         ctx.save();
         ctx.setFont('Arial', 11, '');
         ctx.fillText(lineLyric, pageMargin, lyricY);
@@ -1178,16 +1583,26 @@ export function renderScore(container, score, layout = LAYOUT) {
   ottavaLinks.forEach(({ fromId, toId, kind }) => {
     const a = builtByNoteId.get(fromId);
     const b = builtByNoteId.get(toId);
-    if (!a || !b || a.line !== b.line) return;
+    if (!a || !b) return;
     const position = kind === '8vb' ? TextBracket.Position.BOTTOM : TextBracket.Position.TOP;
-    const bracket = new TextBracket({
-      start: a.vfNote,
-      stop: b.vfNote,
-      text: '8',
-      superscript: kind === '8vb' ? 'vb' : 'va',
-      position,
-    });
-    bracket.setContext(a.ctx).draw();
+    const superscript = kind === '8vb' ? 'vb' : 'va';
+    const drawBracket = (start, stop, ctx) => {
+      new TextBracket({
+        start, stop, text: '8', superscript, position,
+      }).setContext(ctx).draw();
+    };
+    if (a.line === b.line) {
+      drawBracket(a.vfNote, b.vfNote, a.ctx);
+      return;
+    }
+    // 段をまたぐ括弧は、印刷譜と同じように段ごとに切って描く — 開始音符から
+    // その段の最後の音符まで、そして次の段の頭から終了音符まで。
+    // TextBracket は両端に音符を要求するので、途中の段の端の音符を代わりに使う。
+    const part = partByNoteId.get(fromId);
+    const lastOnLine = (lineEdgeNotes.get(`${part}|${a.line}`) || {}).last;
+    const firstOnLine = (lineEdgeNotes.get(`${part}|${b.line}`) || {}).first;
+    if (lastOnLine && lastOnLine !== a.vfNote) drawBracket(a.vfNote, lastOnLine, a.ctx);
+    if (firstOnLine && firstOnLine !== b.vfNote) drawBracket(firstOnLine, b.vfNote, b.ctx);
   });
 
   // Two tones of the same chord tied to the next chord produce two separate
@@ -1255,7 +1670,17 @@ export function renderScore(container, score, layout = LAYOUT) {
   });
 
   return {
-    hitMap, annotationHitMap, markHitMap, timeSigHitMap, pages, totalPages, staveGap,
+    hitMap,
+    annotationHitMap,
+    markHitMap,
+    timeSigHitMap,
+    pages,
+    totalPages,
+    staveGap,
+    // 形式タブの縦スライダーが「いま1ページに何段入っているか」を出せるように
+    // 返す(app.js の updateHeightSliderUI)。
+    firstPageLines,
+    laterPageLines,
   };
 }
 

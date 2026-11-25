@@ -169,12 +169,44 @@ export function createEmptyMeasure() {
   };
 }
 
+// 強弱記号の一覧。LilyPond が持つもの
+// (https://lilypond.org/doc/v2.24/Documentation/notation/expressive-marks-attached-to-notes)
+// のうち、鍵盤楽譜で実際に使うものに絞ってある。ppp〜fff の段階に加えて、
+// 一音だけ強く出す sf/sfz/rfz、その場で弱める fp/sp、消え入る n(niente)。
+// 値はそのまま音楽フォントのダイナミクス字形に置き換えて描かれる
+// (staffRenderer の DYNAMIC_GLYPHS)。
+export const DYNAMIC_OPTIONS = [
+  { value: '', label: '強弱なし' },
+  { value: 'ppp', label: 'ppp(きわめて弱く)' },
+  { value: 'pp', label: 'pp(とても弱く)' },
+  { value: 'p', label: 'p(弱く)' },
+  { value: 'mp', label: 'mp(やや弱く)' },
+  { value: 'mf', label: 'mf(やや強く)' },
+  { value: 'f', label: 'f(強く)' },
+  { value: 'ff', label: 'ff(とても強く)' },
+  { value: 'fff', label: 'fff(きわめて強く)' },
+  { value: 'fp', label: 'fp(強くしてすぐ弱く)' },
+  { value: 'sp', label: 'sp(急に弱く)' },
+  { value: 'sf', label: 'sf(その音だけ強く)' },
+  { value: 'sfz', label: 'sfz(その音を鋭く強く)' },
+  { value: 'rfz', label: 'rfz(その音を張り出して)' },
+  { value: 'n', label: 'n(消え入るように)' },
+];
+
+// 運指(どの指で弾くか)。鍵盤楽譜では 1(親指)〜5(小指)。
+export const FINGERING_OPTIONS = ['', '1', '2', '3', '4', '5'];
+
 // Fields every note carries in addition to its pitch/duration data — コード
 // is a per-note annotation (see chordPitchClassesForLowerNote) rather than
 // per-measure, so a brand-new note needs blank defaults for it the same way
 // it does for dynamic/articulation/lyric.
 export function noteAnnotationDefaults() {
   return {
+    // 運指 — 音符に添える指番号と、それを符頭の上下どちらに置くか。
+    // LilyPond の Fingering は fingeringOrientations の既定が '(up down) で
+    // まず上を試すので、こちらも既定は上。
+    fingering: '',
+    fingeringBelow: false,
     chord: '',
     // true once the user has explicitly set/confirmed this note's chord (via
     // the ribbon editor or by picking a candidate) — auto-detection then
@@ -214,6 +246,10 @@ export function createEmptyScore() {
     // fewer, more spacious measures per line; narrower = more, tighter ones)
     // — see the 形式 tab's drag slider and staffRenderer's computeLines.
     measureWidthScale: 1,
+    // 譜表と譜表の間隔にかかる倍率(形式タブの縦のスライダー)。小さくするほど
+    // 3段セットが縦に縮み、1ページに入る段数が増える。1ページあたりの段数は
+    // これと加線の長さから毎回計算される(staffRenderer の renderScore)。
+    systemHeightScale: 1,
     pickupBeats: 0,
     clefs: { ...PART_CLEF },
     // Playback/WAV-export instrument per part (上鍵盤/下鍵盤/ペダル) — a
@@ -293,9 +329,69 @@ const CHORD_QUALITIES = [
   { suffix: '', intervals: [0, 4, 7] },
 ];
 
-// Root note choices for the コード select UI (sharps only, to keep the list
-// short — enharmonic spelling doesn't matter since the chord is audio-only).
-export const CHORD_ROOTS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+// コードの根音の書きかたは調号によって変わる。ヘ長調の「シ♭」を A# とは書かず
+// Bb と書く — 同じ高さでも、その調で使う音名で書くのが読みやすい。
+//
+// 調号に♭が付く調(と、♯も♭も付かないハ長調/イ短調)では♭で、♯が付く調では♯で
+// 綴る。ハ長調だけは慣習に合わせてファ♯だけ F# とする(ポピュラー音楽で
+// Gb と書くことはまずない)。
+const SHARP_ROOT_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const FLAT_ROOT_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+const NATURAL_ROOT_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+
+export function chordRootNames(keySignature) {
+  const entry = KEY_SIGNATURES.find((k) => k.value === keySignature);
+  if (!entry || !entry.type) return NATURAL_ROOT_NAMES;
+  return entry.type === 'flat' ? FLAT_ROOT_NAMES : SHARP_ROOT_NAMES;
+}
+
+// 綴りの違う同じ根音(A# と Bb など)を同じものとして扱うための番号。
+export function chordRootPitchClass(name) {
+  const m = /^([A-G])(#|b)?$/.exec(name || '');
+  if (!m) return null;
+  const offset = { '#': 1, b: -1 }[m[2]] || 0;
+  return ((CHORD_ROOT_SEMITONE[m[1]] + offset) % 12 + 12) % 12;
+}
+
+// 分数コード(オンコード)の区切り。保存はこの形で持ち、読むときは
+// スラッシュ("C/E")も受け付ける — 手で書き換えたファイルでも読めるように。
+export const BASS_SEPARATOR = ' on ';
+
+// "Cm7 on G" を { chord: 'Cm7', bass: 'G' } に割る。ベース音がなければ bass は ''。
+export function splitBassNote(text) {
+  const m = /^(.*?)(?:\s+on\s+|\s*\/\s*)([A-Ga-g][#b]?)\s*$/.exec((text || '').trim());
+  if (!m) return { chord: (text || '').trim(), bass: '' };
+  return { chord: m[1].trim(), bass: `${m[2][0].toUpperCase()}${m[2].slice(1)}` };
+}
+
+// 和音名にベース音を書き添える。ベース音が根音と同じなら分数コードにはしない
+// (C の一番下がドなら、ただの C であって C on C ではない)。
+export function withBassNote(chordName, bassPitchClass, keySignature) {
+  if (!chordName || bassPitchClass === null || bassPitchClass === undefined) return chordName;
+  const { chord } = splitBassNote(chordName);
+  const m = /^([A-G][#b]?)/.exec(chord);
+  if (!m) return chordName;
+  if (chordRootPitchClass(m[1]) === bassPitchClass) return chord;
+  return `${chord}${BASS_SEPARATOR}${chordRootNames(keySignature)[bassPitchClass]}`;
+}
+
+// 譜面に書くときのコード名。保存されている綴りが何であれ、その楽譜の調号での
+// 綴りに直して返す(ヘ長調なら "A#m7" は "Bbm7")。分数コードはベース音のほうも
+// 同じように読み替える。読み取れない文字列はそのまま。
+export function displayChordSymbol(text, keySignature) {
+  if (!text) return text;
+  const { chord, bass } = splitBassNote(text);
+  const m = /^([A-Ga-g])([#b]?)(.*)$/.exec(chord);
+  if (!m) return text;
+  const pc = chordRootPitchClass(`${m[1].toUpperCase()}${m[2]}`);
+  if (pc === null) return text;
+  const names = chordRootNames(keySignature);
+  const head = `${names[pc]}${m[3]}`;
+  if (!bass) return head;
+  const bassPc = chordRootPitchClass(bass);
+  if (bassPc === null) return head;
+  return `${head}${BASS_SEPARATOR}${names[bassPc]}`;
+}
 
 // Quality choices for the コード select UI — value is appended straight to
 // the root to form the stored chord symbol (e.g. root "F#" + value "m7" ->
@@ -314,6 +410,29 @@ export const CHORD_QUALITY_OPTIONS = [
   { value: 'm7b5', label: 'm7-5' },
 ];
 
+// 反復記号(演奏順を決めるマーカー)。1つの小節に1つだけ付く。
+//
+// LilyPond の Long repeats に倣い、「戻れ」という指示(D.C./D.S.)と「戻った先で
+// どこへ飛ぶか」の指示(To Coda)と「その飛び先」(Coda)、それに終止(Fine)を
+// それぞれ別の記号として扱う。とくにコーダは To Coda と Coda の対で初めて
+// 意味を持つ — 「ここまで来たらコーダへ飛べ」と「そのコーダはここ」の2点が
+// そろわないと演奏順が決まらない。
+//
+// 譜面での書きかた(staffRenderer の drawRepeatMarker):
+//   Segno   … 𝄋            小節の頭(戻ってくる先だから)
+//   Coda    … 𝄌 Coda       小節の頭(飛んでくる先だから)
+//   To Coda … to 𝄌         小節の終わり(そこまで来たら飛ぶ、という指示だから)
+//   D.C. / D.S. / Fine … イタリックの語、小節の終わり
+export const MARKER_OPTIONS = [
+  { value: '', label: 'なし' },
+  { value: 'Segno', label: 'セーニョ 𝄋' },
+  { value: 'To Coda', label: 'トゥ・コーダ（コーダへ飛ぶ地点）' },
+  { value: 'Coda', label: 'コーダ（飛び先。To Codaと対で使う）' },
+  { value: 'D.C.', label: 'D.C.（ダ・カーポ／曲頭へ戻る）' },
+  { value: 'D.S.', label: 'D.S.（ダル・セーニョ／セーニョへ戻る）' },
+  { value: 'Fine', label: 'Fine（フィーネ／ここで終わる）' },
+];
+
 // リハーサル記号(区間ラベル) — a fixed preset list, selected (not typed) per
 // note, shown as a boxed label above it. '' means "no mark".
 export const REHEARSAL_OPTIONS = [
@@ -325,6 +444,18 @@ export const REHEARSAL_OPTIONS = [
 export const REGISTRATION_OPTIONS = ['', ...Array.from({ length: 16 }, (_, i) => `M${i + 1}`)];
 
 // --- automatic chord detection from 下鍵盤/ペダル content ---
+
+const ACCIDENTAL_SEMITONES = {
+  '': 0, '#': 1, '##': 2, b: -1, bb: -2, n: 0,
+};
+
+// "c#/4" を文字・変化記号・オクターヴに割る。pitchMap.js の parseKey と同じ
+// 仕事だが、scoreModel は pitchMap に依存していないのでここに持つ。
+function parseKeyParts(key) {
+  const m = /^([a-gA-G])(#{1,2}|b{1,2}|n)?\/(-?\d+)$/.exec(key || '');
+  if (!m) return { letter: null, accidental: '', octave: 0 };
+  return { letter: m[1].toUpperCase(), accidental: m[2] || '', octave: Number(m[3]) };
+}
 
 function pitchClassOf(key) {
   const m = /^([a-gA-G])(#{1,2}|b{1,2}|n)?\//.exec(key);
@@ -344,19 +475,49 @@ export function noteBeatWindow(measure, part, noteIndex) {
   return { start, end: start + noteBeats(notes[noteIndex]) };
 }
 
-// The set of distinct pitch classes (0-11, ignoring octave) sounding at the
-// moment one specific 下鍵盤 note is struck — its own keys, plus whichever
-// ペダル note(s) overlap its time window in the same measure. This is the
-// raw material per-note chord detection reads (コード is now attached to the
-// 下鍵盤 note it belongs above, not to the whole measure).
-export function chordPitchClassesForLowerNote(measure, noteIndex) {
+// What one specific 下鍵盤 note sounds together with — its own keys, plus
+// whichever ペダル note(s) overlap its time window in the same measure. This
+// is the raw material per-note chord detection reads (コード is attached to
+// the 下鍵盤 note it belongs above, not to the whole measure).
+//
+// 分数コード(オンコード)を判定するには「和音を作っている音の集まり」だけでなく
+// 「いちばん低く鳴っている音」も要る。C on E と E on C は同じ音の集まりでも
+// 別のコードなので、集合にまとめてしまうと区別がつかない。
+//
+// 返すもの:
+//   classes    … その瞬間に鳴っている音名の集まり(下鍵盤 + 重なるペダル)
+//   lowerOnly  … 下鍵盤だけの音名の集まり。ペダルが和音の構成音でないとき
+//                (C on D など)、和音そのものは下鍵盤だけから決める
+//   bass       … いちばん低く鳴っている音の音名。エレクトーンならふつうペダル、
+//                ペダルが休みなら下鍵盤のいちばん下の音
+export function chordContextForLowerNote(measure, noteIndex) {
   const classes = new Set();
+  const lowerOnly = new Set();
   const note = (measure.lower || [])[noteIndex];
-  if (!note || note.isRest) return classes;
+  if (!note || note.isRest) return { classes, lowerOnly, bass: null };
+
+  // 「低い」の比較は音名(0-11)ではなく実際の高さでないといけない。
+  // 音名だけで比べると、オクターヴ下のシがドより高いことになってしまう。
+  let lowestPitch = Infinity;
+  let bass = null;
+  const consider = (key) => {
+    const pc = pitchClassOf(key);
+    if (pc === null) return null;
+    const { letter, accidental, octave } = parseKeyParts(key);
+    if (letter === null) return pc;
+    const pitch = octave * 12 + CHORD_ROOT_SEMITONE[letter] + (ACCIDENTAL_SEMITONES[accidental] || 0);
+    if (pitch < lowestPitch) {
+      lowestPitch = pitch;
+      bass = pc;
+    }
+    return pc;
+  };
+
   note.keys.forEach((tone) => {
-    const pc = pitchClassOf(tone.key);
-    if (pc !== null) classes.add(pc);
+    const pc = consider(tone.key);
+    if (pc !== null) { classes.add(pc); lowerOnly.add(pc); }
   });
+
   const { start, end } = noteBeatWindow(measure, 'lower', noteIndex);
   let cursor = 0;
   (measure.pedal || []).forEach((pn) => {
@@ -365,11 +526,11 @@ export function chordPitchClassesForLowerNote(measure, noteIndex) {
     cursor = pEnd;
     if (pn.isRest || pStart >= end || pEnd <= start) return;
     pn.keys.forEach((tone) => {
-      const pc = pitchClassOf(tone.key);
+      const pc = consider(tone.key);
       if (pc !== null) classes.add(pc);
     });
   });
-  return classes;
+  return { classes, lowerOnly, bass };
 }
 
 // Finds every (root, quality) combination from CHORD_QUALITY_OPTIONS whose
@@ -378,8 +539,9 @@ export function chordPitchClassesForLowerNote(measure, noteIndex) {
 // several roots — that's the "more than one candidate" case callers show as
 // a tentative guess. Fewer than 3 distinct pitches can't match anything (the
 // shortest quality is a triad) and returns no candidates.
-export function detectChordCandidates(pitchClasses) {
+export function detectChordCandidates(pitchClasses, keySignature = 'C') {
   if (!pitchClasses || pitchClasses.size < 2) return [];
+  const rootNames = chordRootNames(keySignature);
   const exact = [];
   CHORD_QUALITY_OPTIONS.forEach((opt) => {
     const quality = CHORD_QUALITIES.find((q) => q.suffix === opt.value);
@@ -390,7 +552,7 @@ export function detectChordCandidates(pitchClasses) {
       if (matches) {
         qSet.forEach((pc) => { if (!pitchClasses.has(pc)) matches = false; });
       }
-      if (matches) exact.push(`${CHORD_ROOTS[root]}${opt.value}`);
+      if (matches) exact.push(`${rootNames[root]}${opt.value}`);
     }
   });
   if (exact.length > 0 || pitchClasses.size !== 2) return exact;
@@ -409,8 +571,40 @@ export function detectChordCandidates(pitchClasses) {
       const qSet = new Set(quality.intervals.map((iv) => (root + iv) % 12));
       let contains = true;
       pitchClasses.forEach((pc) => { if (!qSet.has(pc)) contains = false; });
-      if (contains) partial.push(`${CHORD_ROOTS[root]}${opt.value}`);
+      if (contains) partial.push(`${rootNames[root]}${opt.value}`);
     }
   });
   return partial;
+}
+
+// 分数コード(オンコード)まで含めたコード名の候補。
+//
+// エレクトーンでは下鍵盤が和音、ペダルがベース音を受け持つので、その形のまま
+// 読む。判定は当てはまりの良い順に3段階:
+//
+//   1. 鳴っている音ぜんぶで和音として読めるか
+//      — ドミソをミで支えれば {ド,ミ,ソ} のままなので、これで転回形が拾える
+//   2. 読めなければ、下鍵盤の音だけで和音として読めるか
+//      — ペダルが和音の構成音でない場合(C on D など)。ベース音を混ぜたままだと
+//        どの和音にも当てはまらなくなる
+//   3. それでも読めなければ、従来どおり2音だけの当て推量にかける
+//
+// どの段でも、いちばん低い音が根音と違えば "○ on △" にする。
+export function detectChordSymbols(context, keySignature = 'C') {
+  const { classes, lowerOnly, bass } = context || {};
+  if (!classes || classes.size === 0) return [];
+  const withBass = (names) => names.map((n) => withBassNote(n, bass, keySignature));
+
+  const whole = detectChordCandidates(classes, keySignature);
+  // 2音しかないときの当て推量(段階3)は最後に回したいので、ここでは
+  // ぴったり当てはまったものだけを採る。
+  const exactWhole = classes.size >= 3 ? whole : [];
+  if (exactWhole.length > 0) return withBass(exactWhole);
+
+  if (lowerOnly && lowerOnly.size >= 3 && lowerOnly.size < classes.size) {
+    const fromLower = detectChordCandidates(lowerOnly, keySignature);
+    if (fromLower.length > 0) return withBass(fromLower);
+  }
+
+  return withBass(whole);
 }

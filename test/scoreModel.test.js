@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import {
   beatsPerMeasure, measureCapacity, noteBeats, durationBeats,
   tupletNotesOccupied, detectChordCandidates, keySignatureAccidentalForLetter,
-  isValidTimeSig,
+  isValidTimeSig, chordRootNames, displayChordSymbol,
+  detectChordSymbols, chordContextForLowerNote, splitBassNote,
 } from '../src/renderer/scoreModel.js';
 
 // Durations are measured in quarter notes throughout the app (DURATION_BEATS
@@ -105,4 +106,102 @@ test('keySignatureAccidentalForLetter reflects the key signature', () => {
   assert.equal(keySignatureAccidentalForLetter('C', 'F'), '');
   // A minor key shares its relative major's accidentals.
   assert.equal(keySignatureAccidentalForLetter('Em', 'F'), '#');
+});
+
+// コードの根音は調号に合わせた音名で綴る。ヘ長調の「シ♭」を A# と書くのは
+// 同じ高さでも読み手にとって別物なので、調号どおりの綴りにする。
+test('detectChordCandidates spells roots to match the key signature', () => {
+  const bFlatMajor = new Set([10, 2, 5]); // B♭ D F
+  assert.deepEqual(detectChordCandidates(bFlatMajor, 'F'), ['Bb']);
+  assert.deepEqual(detectChordCandidates(bFlatMajor, 'Bb'), ['Bb']);
+  // ♯系の調では同じ高さを A# と綴る
+  assert.deepEqual(detectChordCandidates(bFlatMajor, 'D'), ['A#']);
+  // ♯♭なしの調はポピュラー音楽の慣習に合わせて♭寄り
+  assert.deepEqual(detectChordCandidates(bFlatMajor, 'C'), ['Bb']);
+});
+
+test('detectChordCandidates keeps natural roots unchanged whatever the key', () => {
+  const gMajor = new Set([7, 11, 2]);
+  assert.deepEqual(detectChordCandidates(gMajor, 'F'), ['G']);
+  assert.deepEqual(detectChordCandidates(gMajor, 'D'), ['G']);
+});
+
+test('displayChordSymbol re-spells a stored chord for the current key', () => {
+  assert.equal(displayChordSymbol('A#m7', 'F'), 'Bbm7');
+  assert.equal(displayChordSymbol('Bbm7', 'D'), 'A#m7');
+  assert.equal(displayChordSymbol('Cmaj7', 'F'), 'Cmaj7');
+  // 読み取れないものはそのまま返す
+  assert.equal(displayChordSymbol('', 'F'), '');
+  assert.equal(displayChordSymbol('N.C.', 'F'), 'N.C.');
+});
+
+test('chordRootNames follows the key signature type', () => {
+  assert.equal(chordRootNames('F')[10], 'Bb');
+  assert.equal(chordRootNames('G')[10], 'A#');
+  assert.equal(chordRootNames('C')[10], 'Bb');
+  assert.equal(chordRootNames('C')[6], 'F#');
+});
+
+// --- 分数コード(オンコード) ---
+
+const CTX = (lower, pedal = []) => chordContextForLowerNote(
+  {
+    lower: [{
+      keys: lower.map((k) => ({ key: k })), duration: 'w', dotted: false, isRest: false,
+    }],
+    pedal: pedal.map((k) => ({
+      keys: [{ key: k }], duration: 'w', dotted: false, isRest: false,
+    })),
+  },
+  0,
+);
+
+test('転回形はベース音つきで読む — ドミソをミで支えれば C on E', () => {
+  assert.deepEqual(detectChordSymbols(CTX(['c/4', 'e/4', 'g/4'], ['e/2'])), ['C on E']);
+  assert.deepEqual(detectChordSymbols(CTX(['c/4', 'e/4', 'g/4'], ['g/2'])), ['C on G']);
+});
+
+test('ベース音が根音と同じならただの和音として書く', () => {
+  assert.deepEqual(detectChordSymbols(CTX(['c/4', 'e/4', 'g/4'], ['c/2'])), ['C']);
+  // ペダルがなければ下鍵盤のいちばん下の音がベース
+  assert.deepEqual(detectChordSymbols(CTX(['c/4', 'e/4', 'g/4'])), ['C']);
+});
+
+test('ベース音が和音の構成音でなくても読める — C on D', () => {
+  // 全部混ぜるとどの和音にも当てはまらないので、下鍵盤だけで和音を決める
+  assert.deepEqual(detectChordSymbols(CTX(['c/4', 'e/4', 'g/4'], ['d/2'])), ['C on D']);
+  assert.deepEqual(detectChordSymbols(CTX(['d/4', 'f/4', 'a/4'], ['g/2'])), ['Dm on G']);
+});
+
+test('ペダルが和音の三音目を補う従来の形は変わらない', () => {
+  // 下鍵盤がミソだけでも、ペダルのドと合わせて C
+  assert.deepEqual(detectChordSymbols(CTX(['e/4', 'g/4'], ['c/2'])), ['C']);
+});
+
+test('ベース音の綴りも調号に従う', () => {
+  assert.deepEqual(detectChordSymbols(CTX(['c/4', 'e/4', 'g/4'], ['d#/2']), 'F'), ['C on Eb']);
+  assert.deepEqual(detectChordSymbols(CTX(['c/4', 'e/4', 'g/4'], ['d#/2']), 'D'), ['C on D#']);
+});
+
+test('ベース音は音名ではなく実際の高さで決める', () => {
+  // ミ(e/3)はド(c/4)より低い。音名の番号(ド=0)だけで比べると取り違える
+  assert.deepEqual(detectChordSymbols(CTX(['e/3', 'c/4', 'g/4'])), ['C on E']);
+});
+
+test('ペダルが和音に足りる音なら7thなどとして読む', () => {
+  // ドミソ + シ♭ は C7 の第3転回形。ベース音を足すだけでなく和音そのものが変わる
+  assert.deepEqual(detectChordSymbols(CTX(['c/4', 'e/4', 'g/4'], ['a#/2']), 'F'), ['C7 on Bb']);
+});
+
+test('splitBassNote は on とスラッシュの両方を読む', () => {
+  assert.deepEqual(splitBassNote('C on E'), { chord: 'C', bass: 'E' });
+  assert.deepEqual(splitBassNote('Cm7/G'), { chord: 'Cm7', bass: 'G' });
+  assert.deepEqual(splitBassNote('C'), { chord: 'C', bass: '' });
+  assert.deepEqual(splitBassNote(''), { chord: '', bass: '' });
+});
+
+test('displayChordSymbol は分数コードの両側を調号に合わせて綴り直す', () => {
+  assert.equal(displayChordSymbol('A#m7 on C#', 'F'), 'Bbm7 on Db');
+  assert.equal(displayChordSymbol('Bbm7 on Db', 'D'), 'A#m7 on C#');
+  assert.equal(displayChordSymbol('C/E', 'C'), 'C on E');
 });

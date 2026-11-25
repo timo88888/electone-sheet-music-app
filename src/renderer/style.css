@@ -447,6 +447,55 @@ input.score-header-field:hover, input.score-header-field:focus {
 }
 .modal-overlay[hidden] { display: none; }
 
+/* 印刷プレビュー — 印刷したときと同じ体裁の楽譜を、縮小して一覧で見せる。
+   .printing クラスを付けた状態の楽譜をそのまま複製して入れるので、実際の
+   印刷結果と食い違わない(app.js の openPrintPreview)。 */
+.print-preview-panel {
+  background: #2b3240;
+  color: #fff;
+  border: 1px solid #5a6272;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  width: min(1100px, 94vw);
+  height: min(880px, 92vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.print-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #5a6272;
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.print-preview-title { font-weight: bold; }
+.print-preview-spacer { flex: 1 1 auto; }
+
+.print-preview-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  background: #6b7280;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+/* 複製した楽譜のページ。縮小は transform でかけ、縮んだぶんの空白が残らない
+   よう外側の枠で高さを詰める(app.js が実寸から計算して設定する)。 */
+.print-preview-page-frame { flex: 0 0 auto; }
+.print-preview-page {
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  transform-origin: top left;
+}
+
 .modal-box {
   background: #333a48;
   color: #fff;
@@ -530,7 +579,11 @@ html.printing body {
 
 /* Editing chrome and transient overlays — never part of the printed score.
    `!important` because several of these are toggled inline or by an
-   `.active` class at runtime. */
+   `.active` class at runtime.
+
+   .print-preview-page(印刷プレビューに並べるページの複製)にも同じものを効かせる
+   — プレビューは <html> の .printing とは関係のない場所に置かれるので、
+   ここに並べておかないと編集用の部品がプレビューにだけ写り込んでしまう。 */
 html.printing .quickbar,
 html.printing .ribbon-tabs,
 html.printing .ribbon-panel,
@@ -542,13 +595,19 @@ html.printing .modal-overlay,
 html.printing .status,
 html.printing .range-highlight,
 html.printing .playing-highlight,
-html.printing .shape-handle {
+html.printing .shape-handle,
+.print-preview-page .measure-number-label,
+.print-preview-page .range-highlight,
+.print-preview-page .playing-highlight,
+.print-preview-page .shape-handle {
   display: none !important;
 }
 
 /* Selection outlines are editing affordances, not content. */
-html.printing .shape-el.selected { outline: none !important; }
-html.printing .score-header-field { outline: none !important; }
+html.printing .shape-el.selected,
+.print-preview-page .shape-el.selected { outline: none !important; }
+html.printing .score-header-field,
+.print-preview-page .score-header-field { outline: none !important; }
 
 html.printing .score-scroll {
   display: block;

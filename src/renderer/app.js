@@ -1,8 +1,9 @@
 import {
-  PARTS, PART_CLEF, CLEF_OPTIONS, CLEF_LABELS, KEY_SIGNATURES, CHORD_ROOTS, CHORD_QUALITY_OPTIONS,
+  PARTS, PART_CLEF, CLEF_OPTIONS, CLEF_LABELS, KEY_SIGNATURES, CHORD_QUALITY_OPTIONS,
+  chordRootNames, chordRootPitchClass, MARKER_OPTIONS,
   TEMPO_NOTE_VALUES, DURATION_LABELS, effectiveQuarterBpm,
-  detectChordCandidates, chordPitchClassesForLowerNote,
-  REHEARSAL_OPTIONS, REGISTRATION_OPTIONS,
+  detectChordSymbols, chordContextForLowerNote, splitBassNote, BASS_SEPARATOR,
+  REHEARSAL_OPTIONS, REGISTRATION_OPTIONS, DYNAMIC_OPTIONS, FINGERING_OPTIONS,
   createEmptyScore, createEmptyMeasure, makeNoteId, noteAnnotationDefaults,
   durationBeats, beatsPerMeasure, measureCapacity, isValidTimeSig,
   tupletNotesOccupied, noteBeats, noteBeatWindow,
@@ -15,6 +16,7 @@ import {
 } from './pitchMap.js';
 import {
   Player, renderScoreToWavBuffer, buildPlaybackEvents, PLAYBACK_LEAD, DEFAULT_INSTRUMENT, pitchToMidi,
+  resolvePlaybackKey,
 } from './playback.js';
 import { buildMidiFile } from './midiExport.js';
 import {
@@ -168,6 +170,12 @@ function migrateScore(loaded) {
   if (!loaded.timeSigDisplay) loaded.timeSigDisplay = 'numeric';
   if (loaded.showChordSymbols === undefined) loaded.showChordSymbols = true;
   if (!loaded.measureWidthScale) loaded.measureWidthScale = 1;
+  if (!loaded.systemHeightScale) loaded.systemHeightScale = 1;
+  // コーダは以前「Coda マーカーを2回置く」仕様だった(1つめが飛ぶ地点、2つめが
+  // 飛び先)。いまは To Coda と Coda の対で持つので、古いファイルの1つめを
+  // To Coda に読み替える。
+  const oldCodaMeasures = (loaded.measures || []).filter((m) => m.marker === 'Coda');
+  if (oldCodaMeasures.length >= 2) oldCodaMeasures[0].marker = 'To Coda';
   if (!loaded.instruments) loaded.instruments = {};
   PARTS.forEach((part) => {
     if (!loaded.instruments[part]) loaded.instruments[part] = DEFAULT_INSTRUMENT;
@@ -204,6 +212,9 @@ let timeSigHitMap = [];
 // The stave gap the current render actually used (see computeRequiredStaveGap
 // in staffRenderer.js) — hit-testing scales its bands to it.
 let layoutStaveGap = LAYOUT.staveGap;
+// 直近の描画結果から拾った1ページあたりの段数(renderScore の戻り値)。
+// 形式タブの縦スライダーの脇に「いま何段入っているか」を出すのに使う。
+let lastPageLineCounts = { firstPageLines: 0, laterPageLines: 0 };
 let dragging = null;
 let rangeDragging = null; // { part, page, startMeasure, endMeasure }
 let rangeSelection = null; // { part, measureStart, measureEnd }
@@ -237,10 +248,27 @@ const player = new Player();
 // using the same per-part instrument playback already uses. Errors (e.g. no
 // audio output, sample fetch failure) are swallowed: a failed blip shouldn't
 // block the note from being inserted.
-async function playInsertedNoteBlip(part, key) {
+// 音符を置いたときに鳴らす確認音は、その音符が実際に演奏で鳴る高さで鳴らす。
+// 臨時記号を付けずに置いた音は調号どおりに鳴る(ト長調のファは F♯)し、同じ
+// 小節ですでに臨時記号が付いていればそれも引き継ぐ — 再生と同じ規則
+// (playback.js の resolvePlaybackKey)を通す。
+function soundingKeyAt(measureIndex, part, key) {
+  const measure = score.measures[measureIndex];
+  const standing = new Map();
+  if (measure) {
+    (measure[part] || []).forEach((n) => {
+      if (n.isRest) return;
+      n.keys.forEach((tone) => resolvePlaybackKey(tone.key, score.keySignature, standing));
+    });
+  }
+  return resolvePlaybackKey(key, score.keySignature, standing);
+}
+
+async function playInsertedNoteBlip(part, key, measureIndex) {
   try {
     await player.ensureInstruments(score.instruments);
-    player.instruments[part].start({ note: pitchToMidi(key), duration: 0.35, velocity: 90 });
+    const sounding = measureIndex === undefined ? key : soundingKeyAt(measureIndex, part, key);
+    player.instruments[part].start({ note: pitchToMidi(sounding), duration: 0.35, velocity: 90 });
   } catch (err) {
     // no-op — see comment above
   }
@@ -314,21 +342,35 @@ const chordModalEl = document.getElementById('chord-modal');
 const chordModalTitleEl = document.getElementById('chord-modal-title');
 const chordModalRootEl = document.getElementById('chord-modal-root');
 const chordModalQualityEl = document.getElementById('chord-modal-quality');
+const chordModalBassEl = document.getElementById('chord-modal-bass');
 const chordModalOkBtn = document.getElementById('chord-modal-ok');
 const chordModalCancelBtn = document.getElementById('chord-modal-cancel');
 
 const NO_CHORD_ROOT = '';
-(function populateChordModalSelects() {
-  const noneOpt = document.createElement('option');
-  noneOpt.value = NO_CHORD_ROOT;
-  noneOpt.textContent = '(コードなし)';
-  chordModalRootEl.appendChild(noneOpt);
-  CHORD_ROOTS.forEach((root) => {
-    const opt = document.createElement('option');
-    opt.value = root;
-    opt.textContent = root;
-    chordModalRootEl.appendChild(opt);
-  });
+
+// 根音の選択肢はその楽譜の調号に合わせた綴りで出す(ヘ長調なら A# ではなく Bb)。
+// 調号は途中で変えられるので、モーダルを開くたびに作り直す。
+function populateChordModalRoots() {
+  const fill = (select, noneLabel) => {
+    select.innerHTML = '';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = NO_CHORD_ROOT;
+    noneOpt.textContent = noneLabel;
+    select.appendChild(noneOpt);
+    chordRootNames(score.keySignature).forEach((root) => {
+      const opt = document.createElement('option');
+      opt.value = root;
+      opt.textContent = root;
+      select.appendChild(opt);
+    });
+  };
+  fill(chordModalRootEl, '(コードなし)');
+  // ベース音を選ぶと分数コード(オンコード)になる。和音の根音と同じものを
+  // 選んでも分数コードにはならない — それはただのその和音なので。
+  fill(chordModalBassEl, '(なし)');
+}
+
+(function populateChordModalQualities() {
   CHORD_QUALITY_OPTIONS.forEach((q) => {
     const opt = document.createElement('option');
     opt.value = q.value;
@@ -339,26 +381,46 @@ const NO_CHORD_ROOT = '';
 
 // Splits a stored chord string ("F#m7") back into root ("F#") + quality
 // ("m7") to preselect the modal when editing an existing chord.
+//
+// 保存されている綴りと、いまの調号での綴りが食い違うことがある(ヘ長調に変えた
+// あとの "A#m7" など)ので、根音もベース音も高さ(pitch class)で突き合わせて、
+// いまの調号の綴りに読み替える。
 function splitChordSymbol(text) {
-  if (!text) return { root: NO_CHORD_ROOT, quality: '' };
-  const m = /^([A-Ga-g])([#b]?)(.*)$/.exec(text.trim());
-  if (!m) return { root: NO_CHORD_ROOT, quality: '' };
-  const root = `${m[1].toUpperCase()}${m[2]}`;
+  const empty = { root: NO_CHORD_ROOT, quality: '', bass: NO_CHORD_ROOT };
+  if (!text) return empty;
+  const { chord, bass } = splitBassNote(text);
+  const m = /^([A-Ga-g])([#b]?)(.*)$/.exec(chord);
+  if (!m) return empty;
+  const written = `${m[1].toUpperCase()}${m[2]}`;
   const quality = m[3].trim();
   const known = CHORD_QUALITY_OPTIONS.some((q) => q.value === quality);
-  if (!CHORD_ROOTS.includes(root) || !known) return { root: NO_CHORD_ROOT, quality: '' };
-  return { root, quality };
+  const pc = chordRootPitchClass(written);
+  if (pc === null || !known) return empty;
+  const names = chordRootNames(score.keySignature);
+  const bassPc = bass ? chordRootPitchClass(bass) : null;
+  return {
+    root: names[pc],
+    quality,
+    bass: bassPc === null ? NO_CHORD_ROOT : names[bassPc],
+  };
 }
 
 function showChordModal(title, currentValue) {
-  const { root, quality } = splitChordSymbol(currentValue);
+  populateChordModalRoots();
+  const { root, quality, bass } = splitChordSymbol(currentValue);
   chordModalTitleEl.textContent = title;
+  chordModalBassEl.value = bass;
   chordModalRootEl.value = root;
   chordModalQualityEl.value = quality;
   chordModalQualityEl.disabled = root === NO_CHORD_ROOT;
+  chordModalBassEl.disabled = root === NO_CHORD_ROOT;
   return new Promise((resolve) => {
     chordModalEl.hidden = false;
-    const onRootChange = () => { chordModalQualityEl.disabled = chordModalRootEl.value === NO_CHORD_ROOT; };
+    const onRootChange = () => {
+      const none = chordModalRootEl.value === NO_CHORD_ROOT;
+      chordModalQualityEl.disabled = none;
+      chordModalBassEl.disabled = none;
+    };
     const cleanup = () => {
       chordModalEl.hidden = true;
       chordModalOkBtn.removeEventListener('click', onOk);
@@ -367,7 +429,16 @@ function showChordModal(title, currentValue) {
     };
     const onOk = () => {
       const chosenRoot = chordModalRootEl.value;
-      const value = chosenRoot === NO_CHORD_ROOT ? '' : `${chosenRoot}${chordModalQualityEl.value}`;
+      const chosenBass = chordModalBassEl.value;
+      let value = '';
+      if (chosenRoot !== NO_CHORD_ROOT) {
+        value = `${chosenRoot}${chordModalQualityEl.value}`;
+        // ベース音が根音と同じなら分数コードにしない(C on C とは書かない)。
+        if (chosenBass !== NO_CHORD_ROOT
+          && chordRootPitchClass(chosenBass) !== chordRootPitchClass(chosenRoot)) {
+          value += `${BASS_SEPARATOR}${chosenBass}`;
+        }
+      }
       cleanup();
       resolve(value);
     };
@@ -473,7 +544,9 @@ function recomputeAutoChords() {
   score.measures.forEach((measure) => {
     (measure.lower || []).forEach((note, noteIndex) => {
       if (note.isRest || note.isPlaceholder || note.chordLocked) return;
-      const candidates = detectChordCandidates(chordPitchClassesForLowerNote(measure, noteIndex));
+      const candidates = detectChordSymbols(
+        chordContextForLowerNote(measure, noteIndex), score.keySignature,
+      );
       if (candidates.length === 0) {
         note.chord = '';
         note.chordTentative = false;
@@ -507,6 +580,10 @@ function render() {
   // ledger lines), and click hit-testing has to use the same value — see
   // hitBandAbove/hitBandBelow.
   layoutStaveGap = result.staveGap;
+  lastPageLineCounts = {
+    firstPageLines: result.firstPageLines,
+    laterPageLines: result.laterPageLines,
+  };
   hitMap = result.hitMap;
   annotationHitMap = result.annotationHitMap;
   markHitMap = result.markHitMap;
@@ -518,6 +595,7 @@ function render() {
   renderMeasureNumbers(result.pages);
   renderTitleHeader(result.pages);
   renderShapes(result.pages);
+  updateHeightSliderUI();
 }
 
 function updateMeasureCount() {
@@ -543,6 +621,7 @@ function syncControlsFromScore() {
   bpmNoteSelect.value = score.bpmNoteValue || 'q';
   document.getElementById('chk-show-chords').checked = score.showChordSymbols !== false;
   updateWidthSliderUI();
+  updateHeightSliderUI();
   PARTS.forEach((part) => {
     const select = document.getElementById(`clef-${part}`);
     if (select) select.value = score.clefs[part];
@@ -649,7 +728,7 @@ function addPitchToNote(note, region, y) {
   render();
   syncNoteControlsFromSelection();
   setStatus('和音に音を追加しました');
-  playInsertedNoteBlip(region.part, key);
+  playInsertedNoteBlip(region.part, key, region.measureIndex);
 }
 
 // Reflects the currently-selected note's dynamic/hairpin/articulation state
@@ -670,6 +749,8 @@ function syncNoteControlsFromSelection() {
   descrescEndBtn.classList.toggle('active', !!(note && note.hairpin === 'decresc-end'));
   dynamicSelect.value = note ? note.dynamic || '' : '';
   articulationSelect.value = note ? note.articulation || '' : '';
+  document.getElementById('fingering-select').value = note ? note.fingering || '' : '';
+  document.getElementById('btn-fingering-side').classList.toggle('active', !!(note && note.fingeringBelow));
   const mark = note ? getMarkForSelectedNote() : null;
   document.getElementById('rehearsal-select').value = mark ? mark.rehearsal || '' : '';
   document.getElementById('registration-select').value = mark ? mark.registration || '' : '';
@@ -1032,7 +1113,8 @@ function renderTitleHeader(pages) {
   // Tempo marking ("♩ = 100") — editable via the quickbar's note-value
   // select + BPM number, this is just the printed display. Sits just above
   // measure 1's own top-left corner (conventional placement), not up by the
-  // title.
+  // title. 1段目のマーク帯(セーニョ/コーダ/コード名が入る)も同じ左端に来る
+  // ので、そこにぶつからないだけ上に置く。
   const tempoMarking = document.createElement('div');
   tempoMarking.className = 'score-tempo-marking';
   const tempoGlyph = document.createElement('span');
@@ -1046,7 +1128,7 @@ function renderTitleHeader(pages) {
   tempoMarking.appendChild(tempoGlyph);
   tempoMarking.appendChild(document.createTextNode(` = ${score.bpm}`));
   tempoMarking.style.left = `${LAYOUT.pageMargin}px`;
-  tempoMarking.style.top = `${topMargin + titleHeaderHeight - 20}px`;
+  tempoMarking.style.top = `${topMargin + titleHeaderHeight - 46}px`;
   pageDiv.appendChild(tempoMarking);
 
   // Conventional placement: right-aligned, stacked under the title.
@@ -1485,6 +1567,61 @@ function setWidthScaleFromClientX(clientX) {
     if (e.target === thumb) return;
     sliderDragging = true;
     setWidthScaleFromClientX(e.clientX);
+  });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+})();
+
+// ---------- 形式タブ: 譜面全体の高さ（ドラッグで調整） ----------
+//
+// 3段セット(上鍵盤・下鍵盤・ペダル)の縦の詰まり具合を変える。詰めるほど
+// 1ページに入る段数が増える — 幅のスライダーが1段あたりの小節数を変えるのと
+// 対になる操作。実際に入る段数は紙の高さと加線の長さから決まるので、
+// スライダーの脇に「いま何段入っているか」を出す。
+
+const HEIGHT_SCALE_MIN = 0.75;
+const HEIGHT_SCALE_MAX = 1.5;
+
+function updateHeightSliderUI() {
+  const track = document.getElementById('height-slider-track');
+  const thumb = document.getElementById('height-slider-thumb');
+  const valueLabel = document.getElementById('height-slider-value');
+  if (!track || !thumb || !valueLabel) return;
+  const scale = score.systemHeightScale || 1;
+  const ratio = Math.max(0, Math.min(1, (scale - HEIGHT_SCALE_MIN) / (HEIGHT_SCALE_MAX - HEIGHT_SCALE_MIN)));
+  thumb.style.left = `${ratio * 100}%`;
+  const { firstPageLines, laterPageLines } = lastPageLineCounts;
+  const lines = firstPageLines === laterPageLines
+    ? `${firstPageLines}段`
+    : `1ページ目${firstPageLines}段／以降${laterPageLines}段`;
+  valueLabel.textContent = `${Math.round(scale * 100)}%（${lines}）`;
+}
+
+function setHeightScaleFromClientX(clientX) {
+  const track = document.getElementById('height-slider-track');
+  const rect = track.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  score.systemHeightScale = HEIGHT_SCALE_MIN + ratio * (HEIGHT_SCALE_MAX - HEIGHT_SCALE_MIN);
+  render();
+  updateHeightSliderUI();
+}
+
+(function setUpHeightSlider() {
+  const track = document.getElementById('height-slider-track');
+  const thumb = document.getElementById('height-slider-thumb');
+  if (!track || !thumb) return;
+  let sliderDragging = false;
+  const onMove = (e) => { if (sliderDragging) setHeightScaleFromClientX(e.clientX); };
+  const onUp = () => {
+    if (!sliderDragging) return;
+    sliderDragging = false;
+    pushHistory();
+  };
+  thumb.addEventListener('mousedown', (e) => { e.preventDefault(); sliderDragging = true; });
+  track.addEventListener('mousedown', (e) => {
+    if (e.target === thumb) return;
+    sliderDragging = true;
+    setHeightScaleFromClientX(e.clientX);
   });
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
@@ -2275,7 +2412,7 @@ function insertNote(region, x, y) {
   render();
   syncNoteControlsFromSelection();
   if (padded > 0) setStatus(`${region.measureIndex}小節目の残りを休符で埋めました`);
-  if (!selectedRest) playInsertedNoteBlip(region.part, key);
+  if (!selectedRest) playInsertedNoteBlip(region.part, key, region.measureIndex);
 }
 
 // Selects a specific note directly (not via a click on the note itself) —
@@ -2363,7 +2500,9 @@ function showChordCandidatePicker(measureIndex, noteId, clientX, clientY) {
   const measure = score.measures[measureIndex];
   const noteIndex = measure.lower.findIndex((n) => n.id === noteId);
   if (noteIndex === -1) return;
-  const candidates = detectChordCandidates(chordPitchClassesForLowerNote(measure, noteIndex));
+  const candidates = detectChordSymbols(
+    chordContextForLowerNote(measure, noteIndex), score.keySignature,
+  );
   const items = candidates.map((c) => ({
     label: c,
     onClick: () => {
@@ -3195,6 +3334,72 @@ window.addEventListener('beforeprint', () => {
 });
 window.addEventListener('afterprint', leavePrintLayout);
 
+// ---------- 印刷プレビュー ----------
+//
+// 実際に印刷される見た目をそのまま見せたいので、譜面のページをまるごと複製して
+// 並べる。プレビュー専用に描き直すと本番と食い違う余地が残るが、この方法なら
+// 同じものしか映らない。
+//
+// 印刷では消える編集用の部品(小節番号のクリック領域、選択の枠など)は、
+// style.css が .print-preview-page 配下でも同じように隠す。
+// 複製したページは編集できない見本なので、input などの操作部品も無効にする。
+
+const printPreviewModalEl = document.getElementById('print-preview-modal');
+const printPreviewBodyEl = document.getElementById('print-preview-body');
+const printPreviewTitleEl = document.getElementById('print-preview-title');
+const printPreviewZoomEl = document.getElementById('print-preview-zoom');
+
+function buildPrintPreview() {
+  const scale = Number(printPreviewZoomEl.value) || 0.4;
+  printPreviewBodyEl.innerHTML = '';
+  const pages = [...scoreContainer.querySelectorAll('.score-page')];
+  pages.forEach((page) => {
+    const clone = page.cloneNode(true);
+    clone.classList.add('print-preview-page');
+    clone.style.transform = `scale(${scale})`;
+    clone.querySelectorAll('input, select, textarea, button').forEach((el) => {
+      el.disabled = true;
+      el.tabIndex = -1;
+    });
+    // 縮小しても元の大きさぶんの場所を取ってしまうので、外枠を縮小後の
+    // 実寸に合わせて隙間をなくす。
+    const frame = document.createElement('div');
+    frame.className = 'print-preview-page-frame';
+    frame.style.width = `${LAYOUT.pageWidth * scale}px`;
+    frame.style.height = `${LAYOUT.pageHeight * scale}px`;
+    frame.appendChild(clone);
+    printPreviewBodyEl.appendChild(frame);
+  });
+  printPreviewTitleEl.textContent = `印刷プレビュー（全${pages.length}ページ）`;
+}
+
+function closePrintPreview() {
+  printPreviewModalEl.hidden = true;
+  printPreviewBodyEl.innerHTML = '';
+}
+
+function openPrintPreview() {
+  // 選択のハイライトは編集中の状態なので、印刷にもプレビューにも残さない。
+  clearAllSelectionsForPrint();
+  buildPrintPreview();
+  printPreviewModalEl.hidden = false;
+}
+
+document.getElementById('btn-print-preview').addEventListener('click', openPrintPreview);
+printPreviewZoomEl.addEventListener('change', buildPrintPreview);
+document.getElementById('print-preview-close').addEventListener('click', closePrintPreview);
+printPreviewModalEl.addEventListener('mousedown', (e) => {
+  if (e.target === printPreviewModalEl) closePrintPreview();
+});
+document.getElementById('print-preview-print').addEventListener('click', () => {
+  closePrintPreview();
+  document.getElementById('btn-print').click();
+});
+document.getElementById('print-preview-pdf').addEventListener('click', () => {
+  closePrintPreview();
+  document.getElementById('btn-export-pdf').click();
+});
+
 document.getElementById('btn-print').addEventListener('click', () => {
   clearAllSelectionsForPrint();
   enterPrintLayout();
@@ -3688,8 +3893,29 @@ function withSelectedNote(fn) {
   syncNoteControlsFromSelection();
 }
 
-document.getElementById('dynamic-select').addEventListener('change', (e) => {
+const dynamicSelectEl = document.getElementById('dynamic-select');
+DYNAMIC_OPTIONS.forEach((opt) => {
+  const el = document.createElement('option');
+  el.value = opt.value;
+  el.textContent = opt.label;
+  dynamicSelectEl.appendChild(el);
+});
+dynamicSelectEl.addEventListener('change', (e) => {
   withSelectedNote((note) => { note.dynamic = e.target.value; });
+});
+
+const fingeringSelectEl = document.getElementById('fingering-select');
+FINGERING_OPTIONS.forEach((v) => {
+  const el = document.createElement('option');
+  el.value = v;
+  el.textContent = v || '運指なし';
+  fingeringSelectEl.appendChild(el);
+});
+fingeringSelectEl.addEventListener('change', (e) => {
+  withSelectedNote((note) => { note.fingering = e.target.value; });
+});
+document.getElementById('btn-fingering-side').addEventListener('click', () => {
+  withSelectedNote((note) => { note.fingeringBelow = !note.fingeringBelow; });
 });
 document.getElementById('articulation-select').addEventListener('change', (e) => {
   withSelectedNote((note) => { note.articulation = e.target.value; });
@@ -3801,12 +4027,26 @@ function toggleRepeatEnd(measureIndex) {
   render();
 }
 
+// セーニョ・コーダ・To Coda・Fine は曲の中で1か所しか意味を持たない
+// (どこへ戻る/飛ぶ/終わるかが決まらなくなる)ので、同じものを別の小節に
+// 付け直したら前のものは外す。D.C./D.S. は複数あってもよいが、
+// playOrder は最初の1回しか効かせないので同じ扱いにする。
+const UNIQUE_MARKERS = new Set(['Segno', 'Coda', 'To Coda', 'Fine', 'D.C.', 'D.S.']);
+
 function setMarker(measureIndex, value) {
   const measure = score.measures[measureIndex];
   if (!measure) return;
+  if (value && UNIQUE_MARKERS.has(value)) {
+    score.measures.forEach((m) => { if (m !== measure && m.marker === value) m.marker = ''; });
+  }
   measure.marker = value;
   pushHistory();
   render();
+  if (value === 'To Coda' && !score.measures.some((m) => m.marker === 'Coda')) {
+    setStatus('飛び先の小節に「コーダ」も設定してください');
+  } else if (value === 'Coda' && !score.measures.some((m) => m.marker === 'To Coda')) {
+    setStatus('飛ぶ地点の小節に「トゥ・コーダ」も設定してください');
+  }
 }
 
 function toggleLineBreak(measureIndex) {
@@ -3855,12 +4095,11 @@ function showMeasureContextMenu(clientX, clientY, measureIndex) {
     },
     { separator: true },
     { header: 'マーカー' },
-    { label: 'なし', active: !measure.marker, onClick: () => setMarker(measureIndex, '') },
-    { label: 'Segno', active: measure.marker === 'Segno', onClick: () => setMarker(measureIndex, 'Segno') },
-    { label: 'D.C.', active: measure.marker === 'D.C.', onClick: () => setMarker(measureIndex, 'D.C.') },
-    { label: 'D.S.', active: measure.marker === 'D.S.', onClick: () => setMarker(measureIndex, 'D.S.') },
-    { label: 'Fine', active: measure.marker === 'Fine', onClick: () => setMarker(measureIndex, 'Fine') },
-    { label: 'Coda', active: measure.marker === 'Coda', onClick: () => setMarker(measureIndex, 'Coda') },
+    ...MARKER_OPTIONS.map((opt) => ({
+      label: opt.label,
+      active: (measure.marker || '') === opt.value,
+      onClick: () => setMarker(measureIndex, opt.value),
+    })),
   ]);
 }
 
@@ -3879,6 +4118,18 @@ document.getElementById('btn-apply-barline').addEventListener('click', () => {
   if (!measure) return;
   setBarlineEnd(score.measures.indexOf(measure), document.getElementById('barline-select').value);
 });
+(function populateMarkerSelect() {
+  const select = document.getElementById('marker-select');
+  if (!select) return;
+  select.innerHTML = '';
+  MARKER_OPTIONS.forEach((opt) => {
+    const el = document.createElement('option');
+    el.value = opt.value;
+    el.textContent = opt.label;
+    select.appendChild(el);
+  });
+}());
+
 document.getElementById('btn-apply-marker').addEventListener('click', () => {
   const measure = targetMeasure();
   if (!measure) return;
@@ -4073,7 +4324,6 @@ function pasteNotesAtPosition(region, localX) {
   setStatus(`${clones.length}個の音符をペーストしました`);
 }
 
-const DYNAMIC_OPTIONS = ['', 'pp', 'p', 'mp', 'mf', 'f', 'ff'];
 const HAIRPIN_OPTIONS = [
   { value: 'cresc-start', label: 'クレッシェンド開始' },
   { value: 'cresc-end', label: 'クレッシェンド終了' },
@@ -4124,10 +4374,10 @@ function noteAttributeSubmenus() {
     { separator: true },
     {
       label: '強弱記号',
-      submenu: DYNAMIC_OPTIONS.map((v) => ({
-        label: v || 'なし',
-        active: (note.dynamic || '') === v,
-        onClick: () => withSelectedNote((n) => { n.dynamic = v; }),
+      submenu: DYNAMIC_OPTIONS.map((opt) => ({
+        label: opt.label,
+        active: (note.dynamic || '') === opt.value,
+        onClick: () => withSelectedNote((n) => { n.dynamic = opt.value; }),
       })),
     },
     {
@@ -4148,6 +4398,21 @@ function noteAttributeSubmenus() {
         onClick: () => withSelectedNote((n) => { n.articulation = opt.value; }),
       })),
     },
+    ...(note.isRest ? [] : [{
+      label: '運指',
+      submenu: [
+        ...FINGERING_OPTIONS.map((v) => ({
+          label: v || 'なし',
+          active: (note.fingering || '') === v,
+          onClick: () => withSelectedNote((n) => { n.fingering = v; }),
+        })),
+        { separator: true },
+        {
+          label: note.fingeringBelow ? '符頭の上に置く' : '符頭の下に置く',
+          onClick: () => withSelectedNote((n) => { n.fingeringBelow = !n.fingeringBelow; }),
+        },
+      ],
+    }]),
     {
       label: 'リハーサル記号',
       submenu: REHEARSAL_OPTIONS.map((v) => ({
@@ -4474,6 +4739,17 @@ updateRangeLabel();
 updateWidthSliderUI();
 render();
 updateWindowTitle();
+
+// 楽譜フォント(Bravura)が読み込まれてからもう一度描き直す。
+//
+// VexFlow は記号の大きさをキャンバスの measureText で測って配置を決めるが、
+// 起動直後の1回目の描画は楽譜フォントの読み込みがまだ終わっておらず、代替
+// フォントの寸法で測ってしまう。臨時記号の間隔やスタッカートの位置などが
+// そのぶんずれた状態で表示され、何か編集して再描画されるまで直らない。
+// 読み込み完了を待って一度描き直せば、最初から正しい配置になる。
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => { render(); });
+}
 
 // --- 終了時の保存確認 ---
 // main.js intercepts the window's close button and sends 'close-requested'

@@ -141,7 +141,7 @@ export function eventMidiNotes(ev) {
 // same letter+octave *within this measure* (barlines cancel it), or failing
 // that, whatever the key signature implies (e.g. F sounds F# in G major).
 // `standingAccidentals` is a Map the caller resets once per measure.
-function resolvePlaybackKey(key, keySignature, standingAccidentals) {
+export function resolvePlaybackKey(key, keySignature, standingAccidentals) {
   const { letter, accidental, octave } = parseKey(key);
   const pid = `${letter}${octave}`;
   if (accidental) {

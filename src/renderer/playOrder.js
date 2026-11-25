@@ -11,9 +11,8 @@
 //   rather than replaying the first one.
 // - A pickup (anacrusis) measure at index 0 is treated as a normal measure if
 //   D.C./D.S. loops back to it, i.e. it may replay.
-// - "Coda" is one marker used twice: the first Coda-marked measure is the
-//   To Coda jump point, the second is where the coda section begins. A score
-//   with only one Coda marker has nothing to jump between, so it's ignored.
+// - コーダは "To Coda"(飛ぶ地点)と "Coda"(飛び先)の対で指定する。片方しか
+//   置かれていない対は行き先/出発点が決まらないので無視する。
 export function buildPlayOrder(score) {
   const measures = score.measures;
   const n = measures.length;
@@ -21,10 +20,11 @@ export function buildPlayOrder(score) {
 
   const segnoIndex = measures.findIndex((m) => m.marker === 'Segno');
 
-  const codaIndices = [];
-  measures.forEach((m, i) => { if (m.marker === 'Coda') codaIndices.push(i); });
-  const toCodaIndex = codaIndices.length >= 2 ? codaIndices[0] : -1;
-  const codaStartIndex = codaIndices.length >= 2 ? codaIndices[1] : -1;
+  const toCodaAt = measures.findIndex((m) => m.marker === 'To Coda');
+  const codaAt = measures.findIndex((m) => m.marker === 'Coda');
+  const paired = toCodaAt >= 0 && codaAt >= 0;
+  const toCodaIndex = paired ? toCodaAt : -1;
+  const codaStartIndex = paired ? codaAt : -1;
 
   // How many times through a repeated section the score expects: a passage
   // with 1番/2番 endings is played twice, one with 1番/2番/3番 three times.

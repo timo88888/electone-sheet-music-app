@@ -142,14 +142,8 @@
     <div class="ribbon-group">
       <span class="group-label">マーカー</span>
       <div class="group-row">
-        <select id="marker-select">
-          <option value="">なし</option>
-          <option value="Segno">Segno</option>
-          <option value="D.C.">D.C.</option>
-          <option value="D.S.">D.S.</option>
-          <option value="Fine">Fine</option>
-          <option value="Coda">Coda</option>
-        </select>
+        <!-- 選択肢は scoreModel.js の MARKER_OPTIONS から組み立てる -->
+        <select id="marker-select"></select>
         <button id="btn-apply-marker">適用</button>
       </div>
     </div>
@@ -185,15 +179,8 @@
     <div class="ribbon-group">
       <span class="group-label">強弱・抑揚</span>
       <div class="group-row">
-        <select id="dynamic-select">
-          <option value="">強弱なし</option>
-          <option value="pp">pp</option>
-          <option value="p">p</option>
-          <option value="mp">mp</option>
-          <option value="mf">mf</option>
-          <option value="f">f</option>
-          <option value="ff">ff</option>
-        </select>
+        <!-- 選択肢は scoreModel.js の DYNAMIC_OPTIONS から組み立てる -->
+        <select id="dynamic-select"></select>
         <button id="btn-cresc-start" title="クレッシェンド開始" class="icon-btn"><svg viewBox="0 0 24 16" width="24" height="16"><path d="M2,8 L22,2 M2,8 L22,14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="btn-text">開始</span></button>
         <button id="btn-cresc-end" title="クレッシェンド終了" class="icon-btn"><svg viewBox="0 0 24 16" width="24" height="16"><path d="M2,8 L22,2 M2,8 L22,14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="btn-text">終了</span></button>
         <button id="btn-decresc-start" title="デクレッシェンド開始" class="icon-btn"><svg viewBox="0 0 24 16" width="24" height="16"><path d="M2,2 L22,8 L2,14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="btn-text">開始</span></button>
@@ -216,6 +203,13 @@
           <option value="mordent">モルデント</option>
           <option value="arpeggio">アルペジオ</option>
         </select>
+      </div>
+    </div>
+    <div class="ribbon-group">
+      <span class="group-label">運指(選択中の音符に設定)</span>
+      <div class="group-row">
+        <select id="fingering-select"></select>
+        <button id="btn-fingering-side" title="指番号を符頭の上と下で入れ替える" class="icon-btn"><span class="btn-text">上下</span></button>
       </div>
     </div>
     <div class="ribbon-group">
@@ -258,6 +252,16 @@
       <span class="hint-text">広げるほど1段あたりの小節数が減り、狭めるほど増えます。各小節の幅は音符の数に応じて自動調整されます。</span>
     </div>
     <div class="ribbon-group">
+      <span class="group-label">譜面全体の高さ（ドラッグで調整）</span>
+      <div class="group-row">
+        <div id="height-slider-track" class="width-slider-track">
+          <div id="height-slider-thumb" class="width-slider-thumb"></div>
+        </div>
+        <span id="height-slider-value" class="hint-text">100%</span>
+      </div>
+      <span class="hint-text">狭めるほど1ページあたりの段数（上鍵盤・下鍵盤・ペダルの3段セット）が増えます。加線や記号がぶつかる分は自動で押し戻されます。</span>
+    </div>
+    <div class="ribbon-group">
       <span class="group-label">表示形式</span>
       <div class="group-row">
         <button id="btn-view-vertical" class="active">縦スクロール</button>
@@ -286,6 +290,7 @@
     <div class="ribbon-group">
       <span class="group-label">書き出し</span>
       <div class="group-row">
+        <button id="btn-print-preview">印刷プレビュー</button>
         <button id="btn-print">印刷</button>
         <button id="btn-export-pdf">PDF書き出し</button>
         <button id="btn-export-midi">MIDI書き出し</button>
@@ -443,6 +448,10 @@
         <select id="chord-modal-root"></select>
         <select id="chord-modal-quality"></select>
       </div>
+      <div class="group-row">
+        <span class="hint-text">ベース音（分数コード）</span>
+        <select id="chord-modal-bass"></select>
+      </div>
       <div class="modal-actions">
         <button id="chord-modal-cancel">キャンセル</button>
         <button id="chord-modal-ok" class="modal-primary">OK</button>
@@ -461,5 +470,27 @@
   </div>
 
   <script type="module" src="app.js"></script>
+  <!-- 印刷プレビュー — 印刷用の見た目そのままの楽譜を、拡大縮小して並べて見せる -->
+  <div id="print-preview-modal" class="modal-overlay" hidden>
+    <div class="print-preview-panel">
+      <div class="print-preview-bar">
+        <span id="print-preview-title" class="print-preview-title">印刷プレビュー</span>
+        <label>表示倍率
+          <select id="print-preview-zoom">
+            <option value="0.25">25%</option>
+            <option value="0.4" selected>40%</option>
+            <option value="0.6">60%</option>
+            <option value="0.8">80%</option>
+            <option value="1">100%</option>
+          </select>
+        </label>
+        <span class="print-preview-spacer"></span>
+        <button id="print-preview-print">印刷する</button>
+        <button id="print-preview-pdf">PDF書き出し</button>
+        <button id="print-preview-close">閉じる</button>
+      </div>
+      <div id="print-preview-body" class="print-preview-body"></div>
+    </div>
+  </div>
 </body>
 </html>

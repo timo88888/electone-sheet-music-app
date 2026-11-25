@@ -71,19 +71,19 @@ test('D.S. returns to the Segno', () => {
   assert.deepEqual(order(measures), [0, 1, 2, 3, 1, 2, 3]);
 });
 
-// Coda — previously the marker could be set from the UI but had no effect at
-// all on playback.
-test('D.S. al Coda jumps from the first Coda mark to the second', () => {
+// コーダは To Coda(飛ぶ地点)と Coda(飛び先)の対で指定する。
+test('D.S. al Coda は To Coda から Coda へ飛ぶ', () => {
   //  0(Segno) 1(To Coda) 2 3(D.S.) 4(Coda) 5
   const measures = [
-    M({ marker: 'Segno' }), M({ marker: 'Coda' }), M(),
+    M({ marker: 'Segno' }), M({ marker: 'To Coda' }), M(),
     M({ marker: 'D.S.' }), M({ marker: 'Coda' }), M(),
   ];
   assert.deepEqual(order(measures), [0, 1, 2, 3, 0, 1, 4, 5]);
 });
 
-test('a lone Coda marker has nothing to jump to and is ignored', () => {
+test('片方だけのコーダは行き先/出発点が決まらないので無視される', () => {
   assert.deepEqual(order([M(), M({ marker: 'Coda' }), M()]), [0, 1, 2]);
+  assert.deepEqual(order([M(), M({ marker: 'To Coda' }), M()]), [0, 1, 2]);
 });
 
 test('Fine before any jump does not stop playback', () => {
